@@ -79,27 +79,34 @@ fun CosmoBackground(
 ) {
     Box(
         modifier = modifier
-            .background(CosmoColors.Black)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF060C1A), Color(0xFF0A0B26), Color(0xFF150B31))
+                )
+            )
             .drawBehind {
+                // accent glow, top right
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.16f), Color.Transparent),
-                        center = Offset(size.width * 0.85f, size.height * 0.05f),
-                        radius = size.width * 0.95f
+                        colors = listOf(accent.copy(alpha = 0.30f), Color.Transparent),
+                        center = Offset(size.width * 0.95f, size.height * 0.02f),
+                        radius = size.width * 1.1f
                     )
                 )
+                // violet glow, bottom left
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(CosmoColors.Violet.copy(alpha = 0.18f), Color.Transparent),
-                        center = Offset(size.width * 0.05f, size.height * 0.95f),
-                        radius = size.width * 1.05f
+                        colors = listOf(CosmoColors.Violet.copy(alpha = 0.34f), Color.Transparent),
+                        center = Offset(size.width * 0.0f, size.height * 0.92f),
+                        radius = size.width * 1.2f
                     )
                 )
+                // soft blue haze, middle
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(accent.copy(alpha = 0.06f), Color.Transparent),
-                        center = Offset(size.width * 0.5f, size.height * 0.5f),
-                        radius = size.width * 0.8f
+                        colors = listOf(Color(0xFF3D5AFE).copy(alpha = 0.12f), Color.Transparent),
+                        center = Offset(size.width * 0.2f, size.height * 0.45f),
+                        radius = size.width * 0.9f
                     )
                 )
             }
@@ -115,25 +122,38 @@ fun GlassCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(24.dp)
     Column(
         modifier = modifier
+            .clip(shape)
             .background(
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.11f), Color.White.copy(alpha = 0.03f))
+                    listOf(
+                        Color(0xFFA9B8FF).copy(alpha = 0.16f),
+                        Color(0xFF6C5CE7).copy(alpha = 0.07f)
+                    )
                 ),
                 shape
             )
+            .drawBehind {
+                // light catching the top-left corner of the glass
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.20f), Color.Transparent),
+                        center = Offset(0f, 0f),
+                        radius = size.width * 0.9f
+                    )
+                )
+            }
             .border(
                 1.dp,
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.32f), accent.copy(alpha = 0.10f), accent.copy(alpha = 0.22f))
+                    listOf(Color.White.copy(alpha = 0.45f), accent.copy(alpha = 0.12f), accent.copy(alpha = 0.35f))
                 ),
                 shape
             )
-            .clip(shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(14.dp),
+            .padding(16.dp),
         content = content
     )
 }
@@ -170,7 +190,16 @@ fun CoreVisualizer(
         val c = center
         val r = size.minDimension / 2f
 
-        drawCircle(color = accent.copy(alpha = 0.10f), radius = r * pulse, center = c)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(accent.copy(alpha = 0.35f), Color.Transparent),
+                center = c,
+                radius = r * 1.45f
+            ),
+            radius = r * 1.45f,
+            center = c
+        )
+        drawCircle(color = accent.copy(alpha = 0.12f), radius = r * pulse, center = c)
         drawCircle(
             color = accent.copy(alpha = 0.6f),
             radius = r * 0.96f,

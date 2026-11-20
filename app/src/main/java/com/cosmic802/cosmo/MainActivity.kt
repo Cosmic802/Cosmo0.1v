@@ -61,6 +61,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.TextStyle
 import org.json.JSONArray
 import java.io.File
 import java.util.Calendar
@@ -338,14 +339,16 @@ fun HudScreen(onNavigate: (Int) -> Unit) {
         Text(
             text = "Your Day,",
             color = Color.White,
-            fontSize = 28.sp,
+            fontSize = 34.sp,
             fontWeight = FontWeight.Bold
         )
         Text(
             text = "Your Way.",
-            color = mode.color,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
+            style = TextStyle(
+                brush = Brush.horizontalGradient(listOf(mode.color, Color(0xFFB39DFF))),
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold
+            )
         )
 
         Spacer(Modifier.height(14.dp))

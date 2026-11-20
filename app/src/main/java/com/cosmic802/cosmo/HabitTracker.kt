@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -95,12 +96,15 @@ fun ChipButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(16.dp)
     Box(
         modifier = modifier
-            .height(40.dp)
-            .background(CosmoColors.Panel, shape)
-            .border(1.dp, color.copy(alpha = 0.7f), shape)
+            .height(42.dp)
+            .background(
+                Brush.horizontalGradient(listOf(color.copy(alpha = 0.30f), color.copy(alpha = 0.08f))),
+                shape
+            )
+            .border(1.dp, color.copy(alpha = 0.75f), shape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
