@@ -38,7 +38,7 @@ object CosmoBrain {
     private const val QUEUE_FILE = "$DATA_DIR/queue.json"
 
     private const val ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
 
     private const val MAX_CHAT = 60
     private const val MAX_LOGS = 200
@@ -255,9 +255,7 @@ object CosmoBrain {
                 .put(
                     "generationConfig",
                     JSONObject()
-                        .put("temperature", 0.7)
-                        .put("maxOutputTokens", 700)
-                        .put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                        .put("maxOutputTokens", 2048)
                 )
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 

@@ -371,7 +371,7 @@ fun BrainScreen() {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        SectionLabel("COSMO BRAIN // GEMINI 2.5 FLASH")
+        SectionLabel("COSMO BRAIN // GEMINI FLASH")
         Text(
             text = "QUEUED REQUESTS: $queued",
             color = CosmoColors.Cyan.copy(alpha = 0.6f),
