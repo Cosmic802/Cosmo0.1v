@@ -490,9 +490,7 @@ object CosmoBrain {
         val local = LocalAI.generate(appCtx, localSystem(), prompt)
         val text = local ?: LocalAI.ruleBased(prompt, kind)
         record(kind, prompt, text)
-        val note = if (local == null && cloudNote != null) "
-
-[$cloudNote]" else ""
+        val note = if (local == null && cloudNote != null) "\n\n[$cloudNote]" else ""
         return BrainReply(text + note)
     }
 
