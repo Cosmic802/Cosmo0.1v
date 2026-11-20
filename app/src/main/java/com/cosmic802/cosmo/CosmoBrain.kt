@@ -73,6 +73,7 @@ object CosmoBrain {
         appCtx = context.applicationContext
         Prefs.init(appCtx)
         Tracker.init(appCtx)
+        Backup.migrateData(appCtx)
         if (Prefs.autoTrack) Tracker.schedule()
         try {
             val cm = appCtx.getSystemService(ConnectivityManager::class.java)
@@ -279,6 +280,7 @@ object CosmoBrain {
         append(languageRule()).append('\n')
         if (Prefs.userName.isNotBlank()) append("The user's name is ").append(Prefs.userName).append(".\n")
         if (Prefs.about.isNotBlank()) append("About the user: ").append(Prefs.about).append('\n')
+        append(Profile.personaBlock())
         val facts = listFacts().takeLast(20)
         if (facts.isNotEmpty()) {
             append("Things the user asked you to remember:\n")
@@ -306,6 +308,7 @@ object CosmoBrain {
         append(basePersona()).append(' ').append(languageRule())
         if (Prefs.userName.isNotBlank()) append(" The user's name is ").append(Prefs.userName).append('.')
         if (Prefs.about.isNotBlank()) append(" About the user: ").append(Prefs.about.take(300)).append('.')
+        append(Profile.localBlock())
         val facts = listFacts().takeLast(5)
         if (facts.isNotEmpty()) append(" Known facts: ").append(facts.joinToString("; ")).append('.')
     }
@@ -508,6 +511,13 @@ object CosmoBrain {
             }
         }
 
+        if (kind == "chat") {
+            Assistant.tryHandle(appCtx, prompt)?.let { t ->
+                record(kind, prompt, t)
+                return BrainReply(t)
+            }
+        }
+
         // device actions work online and offline
         if (kind == "chat") {
             val low = prompt.lowercase(Locale.ROOT)
@@ -575,7 +585,7 @@ object CosmoBrain {
                 append("Yesterday (").append(dateKey(1)).append(") habits: ")
                 append((habits.optJSONObject(dateKey(1)) ?: JSONObject()).toString()).append('\n')
                 append("Recent notes:\n").append(recent)
-                append("\nHabit keys: water_ml (goal 3000), steps (goal 8000), brush_am, brush_pm, skincare_am, skincare_pm, hair.")
+                append("\nHabit keys: water_ml (goal 2200), steps (goal 8000), brush_am, tongue, spf, posture, skincare_pm, floss, brush_pm, hair, sleep_on_time.")
             }
             val r = askBlocking(prompt, kind)
             main.post { callback(r) }

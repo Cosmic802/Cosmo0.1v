@@ -29,6 +29,9 @@ object Prefs {
     var cloudModel by mutableStateOf("gemini-4-hydrogen")
     var speakReplies by mutableStateOf(false)
     var wakeEnabled by mutableStateOf(true)
+    var age by mutableStateOf("")
+    var heightCm by mutableStateOf("")
+    var weightKg by mutableStateOf("")
     var wakeWord by mutableStateOf("cosmo")
     var autoTrack by mutableStateOf(true)
     var trackInAi by mutableStateOf(true)
@@ -41,6 +44,7 @@ object Prefs {
         if (sp != null) return
         val p = ctx.applicationContext.getSharedPreferences("cosmo_prefs", Context.MODE_PRIVATE)
         sp = p
+        Backup.restoreIfNeeded(p)
         userName = p.getString("userName", "") ?: ""
         about = p.getString("about", "") ?: ""
         language = p.getString("language", "AUTO") ?: "AUTO"
@@ -53,6 +57,9 @@ object Prefs {
         if (cloudModel == "gemini-flash-latest") cloudModel = "gemini-4-hydrogen"
         speakReplies = p.getBoolean("speakReplies", false)
         wakeEnabled = p.getBoolean("wakeEnabled", true)
+        age = p.getString("age", "") ?: ""
+        heightCm = p.getString("heightCm", "") ?: ""
+        weightKg = p.getString("weightKg", "") ?: ""
         wakeWord = p.getString("wakeWord", "cosmo") ?: "cosmo"
         autoTrack = p.getBoolean("autoTrack", true)
         trackInAi = p.getBoolean("trackInAi", true)
@@ -74,6 +81,9 @@ object Prefs {
             ?.putString("cloudModel", cloudModel.trim().ifEmpty { "gemini-4-hydrogen" })
             ?.putBoolean("speakReplies", speakReplies)
             ?.putBoolean("wakeEnabled", wakeEnabled)
+            ?.putString("age", age.trim())
+            ?.putString("heightCm", heightCm.trim())
+            ?.putString("weightKg", weightKg.trim())
             ?.putString("wakeWord", wakeWord.trim().ifEmpty { "cosmo" })
             ?.putBoolean("autoTrack", autoTrack)
             ?.putBoolean("trackInAi", trackInAi)
@@ -82,6 +92,7 @@ object Prefs {
             ?.putFloat("glass", glass)
             ?.putInt("chatSize", chatSize)
             ?.apply()
+        sp?.let { Backup.savePrefs(it) }
     }
 
     var apiKey: String

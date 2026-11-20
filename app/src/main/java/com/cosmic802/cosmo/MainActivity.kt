@@ -880,6 +880,9 @@ fun SettingsScreen() {
 
         Spacer(Modifier.height(12.dp))
 
+        ProfileCard()
+        Spacer(Modifier.height(12.dp))
+
         // ---------- voice ----------
         var diag by remember { mutableStateOf(listOf<String>()) }
         GlassCard(Modifier.fillMaxWidth()) {

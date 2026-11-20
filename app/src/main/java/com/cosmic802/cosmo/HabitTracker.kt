@@ -36,16 +36,20 @@ import org.json.JSONObject
 
 object HabitStore {
 
-    const val WATER_GOAL = 3000
+    const val WATER_GOAL = 2200
     const val STEPS_GOAL = 8000
     private const val KEEP_DAYS = 90
 
     val TOGGLES = listOf(
         "brush_am" to "BRUSH TEETH · AM",
+        "tongue" to "TONGUE CLEAN",
+        "spf" to "MOISTURIZER + SPF",
+        "posture" to "POSTURE CHECK",
+        "skincare_pm" to "SKIN CLEANSE · PM",
+        "floss" to "FLOSS",
         "brush_pm" to "BRUSH TEETH · PM",
-        "skincare_am" to "SKINCARE · AM",
-        "skincare_pm" to "SKINCARE · PM",
-        "hair" to "HAIR CARE"
+        "hair" to "HAIR CARE",
+        "sleep_on_time" to "SLEEP ON TIME"
     )
 
     fun load(): JSONObject = CosmoBrain.habitsFor(CosmoBrain.todayKey())
