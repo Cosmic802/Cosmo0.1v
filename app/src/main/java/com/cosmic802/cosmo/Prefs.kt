@@ -26,8 +26,14 @@ object Prefs {
     var offlineOnly by mutableStateOf(false)
     var accent by mutableStateOf(0)
     var modelPath by mutableStateOf("")
-    var cloudModel by mutableStateOf("gemini-flash-latest")
+    var cloudModel by mutableStateOf("gemini-4-hydrogen")
     var speakReplies by mutableStateOf(false)
+    var autoTrack by mutableStateOf(true)
+    var trackInAi by mutableStateOf(true)
+    var screenLimitH by mutableStateOf(4f)
+    var sleepGoalH by mutableStateOf(8f)
+    var glass by mutableStateOf(1f)
+    var chatSize by mutableStateOf(15)
 
     fun init(ctx: Context) {
         if (sp != null) return
@@ -40,8 +46,16 @@ object Prefs {
         offlineOnly = p.getBoolean("offlineOnly", false)
         accent = p.getInt("accent", 0).coerceIn(0, ACCENTS.size - 1)
         modelPath = p.getString("modelPath", "") ?: ""
-        cloudModel = p.getString("cloudModel", "gemini-flash-latest") ?: "gemini-flash-latest"
+        cloudModel = p.getString("cloudModel", "gemini-4-hydrogen") ?: "gemini-4-hydrogen"
+        // old default -> new free-tier default
+        if (cloudModel == "gemini-flash-latest") cloudModel = "gemini-4-hydrogen"
         speakReplies = p.getBoolean("speakReplies", false)
+        autoTrack = p.getBoolean("autoTrack", true)
+        trackInAi = p.getBoolean("trackInAi", true)
+        screenLimitH = p.getFloat("screenLimitH", 4f)
+        sleepGoalH = p.getFloat("sleepGoalH", 8f)
+        glass = p.getFloat("glass", 1f)
+        chatSize = p.getInt("chatSize", 15)
     }
 
     fun save() {
@@ -53,8 +67,14 @@ object Prefs {
             ?.putBoolean("offlineOnly", offlineOnly)
             ?.putInt("accent", accent)
             ?.putString("modelPath", modelPath)
-            ?.putString("cloudModel", cloudModel.trim().ifEmpty { "gemini-flash-latest" })
+            ?.putString("cloudModel", cloudModel.trim().ifEmpty { "gemini-4-hydrogen" })
             ?.putBoolean("speakReplies", speakReplies)
+            ?.putBoolean("autoTrack", autoTrack)
+            ?.putBoolean("trackInAi", trackInAi)
+            ?.putFloat("screenLimitH", screenLimitH)
+            ?.putFloat("sleepGoalH", sleepGoalH)
+            ?.putFloat("glass", glass)
+            ?.putInt("chatSize", chatSize)
             ?.apply()
     }
 

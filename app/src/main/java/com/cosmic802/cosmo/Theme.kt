@@ -129,8 +129,8 @@ fun GlassCard(
             .background(
                 Brush.linearGradient(
                     listOf(
-                        Color(0xFFA9B8FF).copy(alpha = 0.16f),
-                        Color(0xFF6C5CE7).copy(alpha = 0.07f)
+                        Color(0xFFA9B8FF).copy(alpha = (0.16f * Prefs.glass).coerceIn(0.02f, 0.6f)),
+                        Color(0xFF6C5CE7).copy(alpha = (0.07f * Prefs.glass).coerceIn(0.01f, 0.4f))
                     )
                 ),
                 shape

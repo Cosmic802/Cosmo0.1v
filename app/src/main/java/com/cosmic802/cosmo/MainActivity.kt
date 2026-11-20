@@ -107,7 +107,7 @@ fun CosmoApp() {
     var tab by remember { mutableStateOf(0) }
     val tabs = listOf(
         "◉" to "HOME", "✓" to "TASKS", "♡" to "LIFE",
-        "♪" to "STUDY", "✦" to "CHAT", "⚙" to "SET"
+        "♪" to "STUDY", "✦" to "CHAT", "▤" to "STATS", "⚙" to "SET"
     )
 
     CosmoBackground(accent = ModeState.mode.color) {
@@ -129,6 +129,7 @@ fun CosmoApp() {
                     2 -> HabitScreen(Modifier.fillMaxSize())
                     3 -> StudyPlayerScreen(Modifier.fillMaxSize())
                     4 -> BrainScreen()
+                    5 -> TrackScreen()
                     else -> SettingsScreen()
                 }
             }
@@ -182,9 +183,9 @@ fun CosmoApp() {
                         Text(
                             text = name,
                             color = if (sel) accent else Color.White.copy(alpha = 0.45f),
-                            fontSize = 9.sp,
+                            fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
+                            letterSpacing = 0.3.sp
                         )
                     }
                 }
@@ -619,7 +620,12 @@ fun ChatBubble(m: ChatMsg) {
                 .border(1.dp, accent.copy(alpha = if (m.fromUser) 0.5f else 0.2f), shape)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Text(text = m.text, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
+            Text(
+                text = m.text,
+                color = Color.White,
+                fontSize = Prefs.chatSize.sp,
+                lineHeight = (Prefs.chatSize * 1.4f).sp
+            )
         }
     }
 }
@@ -865,10 +871,20 @@ fun SettingsScreen() {
                 visual = if (showKey) VisualTransformation.None else PasswordVisualTransformation()
             )
             Spacer(Modifier.height(8.dp))
+            ChoiceRow(
+                options = listOf(
+                    "gemini-4-hydrogen" to "HYDROGEN",
+                    "gemini-4-carbon" to "CARBON",
+                    "gemini-3.1-pro-preview" to "3.1 PRO"
+                ),
+                selected = Prefs.cloudModel,
+                onSelect = { Prefs.cloudModel = it; Prefs.save() }
+            )
+            Spacer(Modifier.height(8.dp))
             CosmoField(
                 value = Prefs.cloudModel,
                 onChange = { Prefs.cloudModel = it; Prefs.save() },
-                label = "Model (default gemini-flash-latest)",
+                label = "Model ID (default gemini-4-hydrogen)",
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
@@ -948,6 +964,100 @@ fun SettingsScreen() {
                     }
                 }
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- tracking ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("AUTO TRACKING")
+            Spacer(Modifier.height(6.dp))
+            SettingSwitch(
+                title = "Track in background",
+                subtitle = "Steps, screen time and sleep, every ~15 minutes",
+                checked = Prefs.autoTrack,
+                onChange = {
+                    Prefs.autoTrack = it
+                    Prefs.save()
+                    if (it) Tracker.schedule() else Tracker.cancel()
+                }
+            )
+            SettingSwitch(
+                title = "Let Cosmo AI see my data",
+                subtitle = "Adds steps, screen time and sleep to the chat context",
+                checked = Prefs.trackInAi,
+                onChange = { Prefs.trackInAi = it; Prefs.save() }
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "DAILY SCREEN TIME LIMIT · ${Prefs.screenLimitH.toInt()} H",
+                color = CosmoColors.Cyan.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
+            )
+            Slider(
+                value = Prefs.screenLimitH,
+                onValueChange = { Prefs.screenLimitH = it.toInt().toFloat().coerceIn(1f, 12f); Prefs.save() },
+                valueRange = 1f..12f,
+                colors = SliderDefaults.colors(
+                    thumbColor = CosmoColors.Cyan,
+                    activeTrackColor = CosmoColors.Cyan,
+                    inactiveTrackColor = CosmoColors.Dim
+                )
+            )
+            Text(
+                text = "SLEEP GOAL · ${String.format(java.util.Locale.US, "%.1f", Prefs.sleepGoalH)} H",
+                color = CosmoColors.Cyan.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
+            )
+            Slider(
+                value = Prefs.sleepGoalH,
+                onValueChange = { Prefs.sleepGoalH = (Math.round(it * 2f) / 2f).coerceIn(5f, 10f); Prefs.save() },
+                valueRange = 5f..10f,
+                colors = SliderDefaults.colors(
+                    thumbColor = CosmoColors.Cyan,
+                    activeTrackColor = CosmoColors.Cyan,
+                    inactiveTrackColor = CosmoColors.Dim
+                )
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- display ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("DISPLAY")
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "GLASS STRENGTH",
+                color = CosmoColors.Cyan.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
+            )
+            Slider(
+                value = Prefs.glass,
+                onValueChange = { Prefs.glass = it; Prefs.save() },
+                valueRange = 0.4f..2f,
+                colors = SliderDefaults.colors(
+                    thumbColor = CosmoColors.Cyan,
+                    activeTrackColor = CosmoColors.Cyan,
+                    inactiveTrackColor = CosmoColors.Dim
+                )
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "CHAT TEXT SIZE",
+                color = CosmoColors.Cyan.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            ChoiceRow(
+                options = listOf("13" to "SMALL", "15" to "MEDIUM", "18" to "LARGE"),
+                selected = Prefs.chatSize.toString(),
+                onSelect = { Prefs.chatSize = it.toInt(); Prefs.save() }
+            )
         }
 
         Spacer(Modifier.height(12.dp))

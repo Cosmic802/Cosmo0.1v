@@ -45,8 +45,11 @@ object CosmoBrain {
     private val CORRUPT_FILE get() = "$dataDir/memory.corrupt.json"
     private val QUEUE_FILE get() = "$dataDir/queue.json"
 
-    private fun endpoint(): String =
-        "https://generativelanguage.googleapis.com/v1beta/models/${Prefs.cloudModel}:generateContent"
+    private fun endpoint(model: String): String =
+        "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+
+    // Tried in order when the chosen model is out of quota / unavailable.
+    private val FALLBACK_MODELS = listOf("gemini-4-hydrogen", "gemini-3.8-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash")
 
     private const val MAX_CHAT = 60
     private const val MAX_LOGS = 200
@@ -69,6 +72,8 @@ object CosmoBrain {
         if (::appCtx.isInitialized) return
         appCtx = context.applicationContext
         Prefs.init(appCtx)
+        Tracker.init(appCtx)
+        if (Prefs.autoTrack) Tracker.schedule()
         try {
             val cm = appCtx.getSystemService(ConnectivityManager::class.java)
             cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
@@ -281,6 +286,12 @@ object CosmoBrain {
         }
         append("Current date/time: ")
             .append(SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())).append('\n')
+        if (Prefs.trackInAi) {
+            try {
+                append(Tracker.aiSummary())
+            } catch (_: Exception) {
+            }
+        }
         try {
             val open = TaskStore.list().filter { !it.done }.take(8)
             if (open.isNotEmpty()) {
@@ -322,17 +333,51 @@ object CosmoBrain {
         return arr
     }
 
+    /** Tries the chosen model first, then the fallbacks when quota/availability fails. */
     private fun callGemini(contents: JSONArray): Result<String> {
+        val models = (listOf(Prefs.cloudModel.ifBlank { "gemini-4-hydrogen" }) + FALLBACK_MODELS).distinct()
+        var last: Result<String> = Result.failure(IllegalStateException("Gemini unavailable"))
+        for (m in models) {
+            val r = callGeminiModel(m, contents)
+            if (r.isSuccess) return r
+            last = r
+            val e = r.exceptionOrNull()
+            val tryNext = e is ApiException && (e.code == 429 || e.code == 404 || e.code >= 500)
+            if (!tryNext) break
+        }
+        return last
+    }
+
+    // Gemini 4 models count thinking tokens inside maxOutputTokens, so give them room and keep thinking low.
+    private fun generationConfigFor(model: String): JSONObject {
+        val cfg = JSONObject()
+        if (model.contains("gemini-4", ignoreCase = true)) {
+            cfg.put("maxOutputTokens", 8192)
+            cfg.put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
+        } else {
+            cfg.put("maxOutputTokens", 4096)
+        }
+        return cfg
+    }
+
+    private fun friendlyError(code: Int, body: String): String = when {
+        code == 429 -> "Gemini quota exceeded (429). Wait a minute, pick another model in Settings, or check billing for this API key."
+        code == 400 || code == 401 || code == 403 -> "Gemini rejected the request ($code). Check your API key in Settings."
+        code == 404 -> "Gemini model not found (404). Change the model name in Settings."
+        else -> "Gemini error $code"
+    }
+
+    private fun callGeminiModel(model: String, contents: JSONArray): Result<String> {
         val key = getApiKey()
         if (key.isEmpty()) {
             return Result.failure(IllegalStateException("API key missing. Set it in Settings, Sir."))
         }
         var conn: HttpURLConnection? = null
         try {
-            conn = (URL(endpoint()).openConnection() as HttpURLConnection).apply {
+            conn = (URL(endpoint(model)).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
-                readTimeout = 45_000
+                readTimeout = 90_000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("x-goog-api-key", key)
@@ -343,18 +388,14 @@ object CosmoBrain {
                     JSONObject().put("parts", JSONArray().put(JSONObject().put("text", persona())))
                 )
                 .put("contents", contents)
-                .put(
-                    "generationConfig",
-                    JSONObject()
-                        .put("maxOutputTokens", 2048)
-                )
+                .put("generationConfig", generationConfigFor(model))
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
-                return Result.failure(ApiException(code, "Gemini error $code: ${text.take(160)}"))
+                return Result.failure(ApiException(code, friendlyError(code, text)))
             }
 
             val parts = JSONObject(text)
@@ -467,6 +508,23 @@ object CosmoBrain {
             }
         }
 
+        // device actions work online and offline
+        if (kind == "chat") {
+            val low = prompt.lowercase(Locale.ROOT)
+            if (listOf("flashlight", "torch", "fonar", "чийдэн").any { low.contains(it) }) {
+                val turnOff = low.contains("off") || low.contains("унтраа") || low.contains("untra")
+                val ok = DeviceActions.torch(appCtx, !turnOff)
+                val mn = LocalAI.isMongolian(prompt)
+                val text = when {
+                    !ok -> if (mn) "Гар чийдэнг удирдаж чадсангүй." else "I could not control the flashlight."
+                    turnOff -> if (mn) "Гар чийдэн унтарлаа." else "Flashlight off."
+                    else -> if (mn) "Гар чийдэн асалаа." else "Flashlight on."
+                }
+                record(kind, prompt, text)
+                return BrainReply(text, error = !ok)
+            }
+        }
+
         // 1) cloud (Gemini) when allowed, online and a key exists
         var cloudNote: String? = null
         val key = getApiKey()
@@ -488,7 +546,7 @@ object CosmoBrain {
 
         // 2) on-device model, 3) built-in rule engine
         val local = LocalAI.generate(appCtx, localSystem(), prompt)
-        val text = local ?: LocalAI.ruleBased(prompt, kind)
+        val text = local ?: LocalAI.ruleBased(prompt, kind, cloudNote != null)
         record(kind, prompt, text)
         val note = if (local == null && cloudNote != null) "\n\n[$cloudNote]" else ""
         return BrainReply(text + note)
