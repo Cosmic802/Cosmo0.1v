@@ -12,6 +12,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,7 +47,8 @@ import androidx.compose.ui.unit.sp
 
 object CosmoColors {
     val Black = Color(0xFF05080D)
-    val Cyan = Color(0xFF00E5FF)
+    /** Main accent; follows the colour chosen in Settings. */
+    val Cyan: Color get() = Prefs.accentColor()
     val Amber = Color(0xFFFFB300)
     val Crimson = Color(0xFFFF1744)
     val Violet = Color(0xFF7C4DFF)
@@ -48,20 +56,19 @@ object CosmoColors {
     val Dim = Color(0xFF1B2A36)
 }
 
-private val CosmoScheme = darkColorScheme(
-    primary = CosmoColors.Cyan,
-    onPrimary = CosmoColors.Black,
-    secondary = CosmoColors.Amber,
-    onSecondary = CosmoColors.Black,
-    background = CosmoColors.Black,
-    onBackground = CosmoColors.Cyan,
-    surface = CosmoColors.Panel,
-    onSurface = CosmoColors.Cyan
-)
-
 @Composable
 fun CosmoTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = CosmoScheme, content = content)
+    val scheme = darkColorScheme(
+        primary = CosmoColors.Cyan,
+        onPrimary = CosmoColors.Black,
+        secondary = CosmoColors.Amber,
+        onSecondary = CosmoColors.Black,
+        background = CosmoColors.Black,
+        onBackground = CosmoColors.Cyan,
+        surface = CosmoColors.Panel,
+        onSurface = CosmoColors.Cyan
+    )
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 @Composable
@@ -83,9 +90,16 @@ fun CosmoBackground(
                 )
                 drawRect(
                     brush = Brush.radialGradient(
-                        colors = listOf(CosmoColors.Violet.copy(alpha = 0.13f), Color.Transparent),
+                        colors = listOf(CosmoColors.Violet.copy(alpha = 0.18f), Color.Transparent),
                         center = Offset(size.width * 0.05f, size.height * 0.95f),
-                        radius = size.width * 0.95f
+                        radius = size.width * 1.05f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.06f), Color.Transparent),
+                        center = Offset(size.width * 0.5f, size.height * 0.5f),
+                        radius = size.width * 0.8f
                     )
                 )
             }
@@ -101,16 +115,22 @@ fun GlassCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(22.dp)
     Column(
         modifier = modifier
             .background(
                 Brush.linearGradient(
-                    listOf(Color.White.copy(alpha = 0.09f), Color.White.copy(alpha = 0.03f))
+                    listOf(Color.White.copy(alpha = 0.11f), Color.White.copy(alpha = 0.03f))
                 ),
                 shape
             )
-            .border(1.dp, accent.copy(alpha = 0.28f), shape)
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.32f), accent.copy(alpha = 0.10f), accent.copy(alpha = 0.22f))
+                ),
+                shape
+            )
             .clip(shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(14.dp),
@@ -235,5 +255,72 @@ fun StatusRing(
             fontSize = 10.sp,
             letterSpacing = 1.sp
         )
+    }
+}
+
+@Composable
+fun SettingSwitch(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = Color.White.copy(alpha = 0.55f), fontSize = 11.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = CosmoColors.Cyan,
+                checkedThumbColor = CosmoColors.Black,
+                uncheckedTrackColor = CosmoColors.Dim,
+                uncheckedThumbColor = Color.White.copy(alpha = 0.7f),
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
+/** Row of selectable pills, e.g. language or personality. */
+@Composable
+fun ChoiceRow(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        options.forEach { (id, label) ->
+            val sel = id == selected
+            val shape = RoundedCornerShape(14.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(40.dp)
+                    .background(
+                        if (sel) CosmoColors.Cyan.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f),
+                        shape
+                    )
+                    .border(1.dp, if (sel) CosmoColors.Cyan else CosmoColors.Dim, shape)
+                    .clickable { onSelect(id) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label,
+                    color = if (sel) CosmoColors.Cyan else Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+            }
+        }
     }
 }

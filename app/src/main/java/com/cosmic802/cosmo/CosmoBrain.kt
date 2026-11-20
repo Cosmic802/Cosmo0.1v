@@ -32,13 +32,21 @@ private class ApiException(val code: Int, message: String) : Exception(message)
 object CosmoBrain {
 
     const val DATA_DIR = "/sdcard/CosmoData"
-    private const val MEMORY_FILE = "$DATA_DIR/memory.json"
-    private const val CORRUPT_FILE = "$DATA_DIR/memory.corrupt.json"
-    private const val KEY_FILE = "$DATA_DIR/api_key.txt"
-    private const val QUEUE_FILE = "$DATA_DIR/queue.json"
+    private const val LEGACY_KEY_FILE = "$DATA_DIR/api_key.txt"
 
-    private const val ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+    // Shared folder when "All files access" is granted, otherwise the app's private folder.
+    private val dataDir: String
+        get() = if (::appCtx.isInitialized && !hasStorageAccess()) {
+            File(appCtx.filesDir, "CosmoData").absolutePath
+        } else {
+            DATA_DIR
+        }
+    private val MEMORY_FILE get() = "$dataDir/memory.json"
+    private val CORRUPT_FILE get() = "$dataDir/memory.corrupt.json"
+    private val QUEUE_FILE get() = "$dataDir/queue.json"
+
+    private fun endpoint(): String =
+        "https://generativelanguage.googleapis.com/v1beta/models/${Prefs.cloudModel}:generateContent"
 
     private const val MAX_CHAT = 60
     private const val MAX_LOGS = 200
@@ -60,6 +68,7 @@ object CosmoBrain {
     fun init(context: Context) {
         if (::appCtx.isInitialized) return
         appCtx = context.applicationContext
+        Prefs.init(appCtx)
         try {
             val cm = appCtx.getSystemService(ConnectivityManager::class.java)
             cm?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
@@ -93,7 +102,7 @@ object CosmoBrain {
 
     private fun fileExists(path: String): Boolean =
         try {
-            File(path).exists() || RootShell.exec("test -f '$path'").first == 0
+            File(path).exists() || (path.startsWith(DATA_DIR) && RootShell.exec("test -f '$path'").first == 0)
         } catch (_: Exception) {
             false
         }
@@ -104,6 +113,7 @@ object CosmoBrain {
             if (f.exists() && f.canRead()) return f.readText()
         } catch (_: Exception) {
         }
+        if (!path.startsWith(DATA_DIR)) return null
         val (code, out) = RootShell.exec("cat '$path'")
         return if (code == 0) out else null
     }
@@ -116,6 +126,7 @@ object CosmoBrain {
             return true
         } catch (_: Exception) {
         }
+        if (!path.startsWith(DATA_DIR)) return false
         return try {
             val tmp = File(appCtx.cacheDir, "cosmo_tmp.dat")
             tmp.writeText(text)
@@ -136,6 +147,7 @@ object CosmoBrain {
         if (o.optJSONObject("habits") == null) o.put("habits", JSONObject())
         if (o.optJSONArray("chat") == null) o.put("chat", JSONArray())
         if (o.optJSONArray("logs") == null) o.put("logs", JSONArray())
+        if (o.optJSONArray("facts") == null) o.put("facts", JSONArray())
         return o
     }
 
@@ -200,12 +212,91 @@ object CosmoBrain {
 
     // ---------- api key ----------
 
-    fun getApiKey(): String = synchronized(lock) {
-        readFile(KEY_FILE)?.trim().orEmpty()
+    fun getApiKey(): String {
+        val k = Prefs.apiKey
+        if (k.isNotEmpty()) return k
+        // one-time migration from the old /sdcard file
+        val legacy = try {
+            val f = File(LEGACY_KEY_FILE)
+            if (f.exists() && f.canRead()) f.readText().trim() else ""
+        } catch (_: Exception) {
+            ""
+        }
+        if (legacy.isNotEmpty()) Prefs.apiKey = legacy
+        return legacy
     }
 
-    fun setApiKey(key: String): Boolean = synchronized(lock) {
-        writeFile(KEY_FILE, key.trim())
+    fun setApiKey(key: String): Boolean {
+        Prefs.apiKey = key
+        return true
+    }
+
+
+    // ---------- personal context (profile + remembered facts) ----------
+
+    private val REMEMBER_RE = Regex(
+        "^(?:please\\s+)?(?:remember|sana|сана|санаарай)\\s*(?:that|:)?\\s*(.+)$",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun addFact(text: String): Boolean = updateMemory { m ->
+        val a = m.getJSONArray("facts")
+        a.put(JSONObject().put("text", text).put("ts", System.currentTimeMillis()))
+        trim(a, 100)
+    }
+
+    fun listFacts(): List<String> {
+        val a = loadMemory().optJSONArray("facts") ?: return emptyList()
+        val out = ArrayList<String>()
+        for (i in 0 until a.length()) {
+            val t = a.optJSONObject(i)?.optString("text").orEmpty()
+            if (t.isNotBlank()) out.add(t)
+        }
+        return out
+    }
+
+    fun clearFacts(): Boolean = updateMemory { m -> m.put("facts", JSONArray()) }
+
+    private fun languageRule(): String = when (Prefs.language) {
+        "MN" -> "Always reply in Mongolian (Cyrillic script)."
+        "EN" -> "Always reply in English."
+        else -> "Reply in the same language the user writes in (English or Mongolian; if the Mongolian is typed in Latin letters, answer in Mongolian Cyrillic)."
+    }
+
+    private fun basePersona(): String = when (Prefs.style) {
+        "FRIEND" -> "You are Cosmo, a warm, friendly personal AI assistant. Be natural, supportive and concise. Plain text only, no markdown."
+        "CONCISE" -> "You are Cosmo, a personal AI assistant. Answer in at most three short sentences. Plain text only, no markdown."
+        else -> PERSONA
+    }
+
+    private fun persona(): String = buildString {
+        append(basePersona()).append('\n')
+        append(languageRule()).append('\n')
+        if (Prefs.userName.isNotBlank()) append("The user's name is ").append(Prefs.userName).append(".\n")
+        if (Prefs.about.isNotBlank()) append("About the user: ").append(Prefs.about).append('\n')
+        val facts = listFacts().takeLast(20)
+        if (facts.isNotEmpty()) {
+            append("Things the user asked you to remember:\n")
+            facts.forEach { append("- ").append(it).append('\n') }
+        }
+        append("Current date/time: ")
+            .append(SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())).append('\n')
+        try {
+            val open = TaskStore.list().filter { !it.done }.take(8)
+            if (open.isNotEmpty()) {
+                append("User's open tasks: ").append(open.joinToString("; ") { it.title }).append('\n')
+            }
+            append("Today's habit data: ").append(habitsFor(todayKey()).toString()).append('\n')
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun localSystem(): String = buildString {
+        append(basePersona()).append(' ').append(languageRule())
+        if (Prefs.userName.isNotBlank()) append(" The user's name is ").append(Prefs.userName).append('.')
+        if (Prefs.about.isNotBlank()) append(" About the user: ").append(Prefs.about.take(300)).append('.')
+        val facts = listFacts().takeLast(5)
+        if (facts.isNotEmpty()) append(" Known facts: ").append(facts.joinToString("; ")).append('.')
     }
 
     // ---------- gemini ----------
@@ -238,7 +329,7 @@ object CosmoBrain {
         }
         var conn: HttpURLConnection? = null
         try {
-            conn = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+            conn = (URL(endpoint()).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
                 readTimeout = 45_000
@@ -249,7 +340,7 @@ object CosmoBrain {
             val body = JSONObject()
                 .put(
                     "system_instruction",
-                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", PERSONA)))
+                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", persona())))
                 )
                 .put("contents", contents)
                 .put(
@@ -360,28 +451,49 @@ object CosmoBrain {
     // ---------- public ask API ----------
 
     private fun askBlocking(prompt: String, kind: String): BrainReply {
-        if (!isOnline()) {
-            enqueue(prompt, kind)
-            return BrainReply(
-                "Network unavailable, Sir. Request queued; I shall process it once we are back online.",
-                queued = true
-            )
+        // "remember ..." works online and offline
+        if (kind == "chat") {
+            REMEMBER_RE.find(prompt.trim())?.let { mt ->
+                val fact = mt.groupValues[1].trim()
+                if (fact.isNotEmpty()) {
+                    val ok = addFact(fact)
+                    val mn = LocalAI.isMongolian(prompt)
+                    return BrainReply(
+                        if (ok) (if (mn) "Тэмдэглэж авлаа." else "Noted. I will remember that.")
+                        else (if (mn) "Хадгалж чадсангүй." else "I could not save that."),
+                        error = !ok
+                    )
+                }
+            }
         }
-        val result = callGemini(contentsFor(prompt, kind == "chat"))
-        val reply = result.getOrNull()
-        if (reply != null) {
-            record(kind, prompt, reply)
-            return BrainReply(reply)
+
+        // 1) cloud (Gemini) when allowed, online and a key exists
+        var cloudNote: String? = null
+        val key = getApiKey()
+        if (!Prefs.offlineOnly) {
+            if (key.isEmpty()) {
+                cloudNote = "No Gemini API key set"
+            } else if (!isOnline()) {
+                cloudNote = "No internet"
+            } else {
+                val result = callGemini(contentsFor(prompt, kind == "chat"))
+                val reply = result.getOrNull()
+                if (reply != null) {
+                    record(kind, prompt, reply)
+                    return BrainReply(reply)
+                }
+                cloudNote = result.exceptionOrNull()?.message ?: "Cloud error"
+            }
         }
-        val err = result.exceptionOrNull()
-        if (isRetryable(err)) {
-            enqueue(prompt, kind)
-            return BrainReply(
-                "Connection to the service failed, Sir. Request queued for retry.",
-                queued = true
-            )
-        }
-        return BrainReply(err?.message ?: "Unknown error.", error = true)
+
+        // 2) on-device model, 3) built-in rule engine
+        val local = LocalAI.generate(appCtx, localSystem(), prompt)
+        val text = local ?: LocalAI.ruleBased(prompt, kind)
+        record(kind, prompt, text)
+        val note = if (local == null && cloudNote != null) "
+
+[$cloudNote]" else ""
+        return BrainReply(text + note)
     }
 
     fun ask(prompt: String, kind: String = "chat", callback: (BrainReply) -> Unit) {

@@ -56,13 +56,31 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.graphics.Brush
+import org.json.JSONArray
+import java.io.File
 import java.util.Calendar
 
-enum class CosmoMode(val label: String, val color: Color) {
-    STUDY("STUDY", CosmoColors.Cyan),
-    GAME("GAME", CosmoColors.Amber),
-    SLEEP("SLEEP", CosmoColors.Crimson),
-    NORMAL("NORMAL", CosmoColors.Cyan)
+enum class CosmoMode(val label: String, private val tint: () -> Color) {
+    STUDY("STUDY", { CosmoColors.Cyan }),
+    GAME("GAME", { CosmoColors.Amber }),
+    SLEEP("SLEEP", { CosmoColors.Crimson }),
+    NORMAL("NORMAL", { CosmoColors.Cyan });
+
+    val color: Color get() = tint()
+}
+
+fun aiStatus(): String {
+    val local = LocalAI.isModelReady()
+    return when {
+        Prefs.offlineOnly -> if (local) "OFFLINE · LOCAL MODEL" else "OFFLINE · BASIC"
+        CosmoBrain.getApiKey().isEmpty() -> if (local) "NO KEY · LOCAL MODEL" else "NO KEY · BASIC"
+        else -> "CLOUD · GEMINI"
+    }
 }
 
 object ModeState {
@@ -86,7 +104,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CosmoApp() {
     var tab by remember { mutableStateOf(0) }
-    val tabs = listOf("HUD", "TASKS", "LIFE", "STUDY", "BRAIN", "SYS")
+    val tabs = listOf(
+        "◉" to "HOME", "✓" to "TASKS", "♡" to "LIFE",
+        "♪" to "STUDY", "✦" to "CHAT", "⚙" to "SET"
+    )
 
     CosmoBackground(accent = ModeState.mode.color) {
         Column(
@@ -111,33 +132,56 @@ fun CosmoApp() {
                 }
             }
 
-            val navShape = RoundedCornerShape(24.dp)
+            val navShape = RoundedCornerShape(28.dp)
+            val accent = CosmoColors.Cyan
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .background(CosmoColors.Panel.copy(alpha = 0.9f), navShape)
-                    .border(1.dp, CosmoColors.Dim, navShape)
-                    .padding(4.dp)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.04f))
+                        ),
+                        navShape
+                    )
+                    .border(
+                        1.dp,
+                        Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = 0.3f), accent.copy(alpha = 0.15f))
+                        ),
+                        navShape
+                    )
+                    .padding(5.dp)
             ) {
-                tabs.forEachIndexed { i, name ->
+                tabs.forEachIndexed { i, (icon, name) ->
                     val sel = i == tab
-                    val itemShape = RoundedCornerShape(20.dp)
-                    Box(
+                    val itemShape = RoundedCornerShape(22.dp)
+                    Column(
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
+                            .height(52.dp)
                             .background(
-                                if (sel) CosmoColors.Cyan.copy(alpha = 0.15f) else Color.Transparent,
+                                if (sel) accent.copy(alpha = 0.18f) else Color.Transparent,
+                                itemShape
+                            )
+                            .border(
+                                1.dp,
+                                if (sel) accent.copy(alpha = 0.5f) else Color.Transparent,
                                 itemShape
                             )
                             .clickable { tab = i },
-                        contentAlignment = Alignment.Center
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Text(
+                            text = icon,
+                            color = if (sel) accent else Color.White.copy(alpha = 0.5f),
+                            fontSize = 17.sp
+                        )
+                        Text(
                             text = name,
-                            color = if (sel) CosmoColors.Cyan else CosmoColors.Cyan.copy(alpha = 0.45f),
-                            fontSize = 11.sp,
+                            color = if (sel) accent else Color.White.copy(alpha = 0.45f),
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         )
@@ -286,7 +330,7 @@ fun HudScreen(onNavigate: (Int) -> Unit) {
             .verticalScroll(rememberScrollState())
     ) {
         Text(
-            text = "$greet, Sir.",
+            text = "$greet, ${Prefs.userName.ifBlank { "Sir" }}.",
             color = CosmoColors.Cyan.copy(alpha = 0.7f),
             fontSize = 14.sp,
             letterSpacing = 1.sp
@@ -328,7 +372,7 @@ fun HudScreen(onNavigate: (Int) -> Unit) {
                     fontSize = 11.sp
                 )
                 Text(
-                    text = "QUEUE: $queued",
+                    text = aiStatus(),
                     color = CosmoColors.Cyan.copy(alpha = 0.6f),
                     fontSize = 11.sp
                 )
@@ -547,88 +591,137 @@ fun SectionLabel(text: String, color: Color = CosmoColors.Amber) {
     )
 }
 
+class ChatMsg(val fromUser: Boolean, val text: String)
+
+@Composable
+fun ChatBubble(m: ChatMsg) {
+    val accent = CosmoColors.Cyan
+    val shape = RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = 18.dp,
+        bottomStart = if (m.fromUser) 18.dp else 4.dp,
+        bottomEnd = if (m.fromUser) 4.dp else 18.dp
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (m.fromUser) Arrangement.End else Arrangement.Start
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .background(
+                    if (m.fromUser) accent.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.07f),
+                    shape
+                )
+                .border(1.dp, accent.copy(alpha = if (m.fromUser) 0.5f else 0.2f), shape)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        ) {
+            Text(text = m.text, color = Color.White, fontSize = 14.sp, lineHeight = 20.sp)
+        }
+    }
+}
+
 @Composable
 fun BrainScreen() {
+    val msgs = remember { mutableStateListOf<ChatMsg>() }
     var input by remember { mutableStateOf("") }
-    var reply by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var queued by remember { mutableStateOf(0) }
+    val listState = rememberLazyListState()
 
+    LaunchedEffect(Unit) {
+        val hist = withContext(Dispatchers.IO) { CosmoBrain.loadMemory().getJSONArray("chat") }
+        msgs.clear()
+        for (i in 0 until hist.length()) {
+            val o = hist.optJSONObject(i) ?: continue
+            msgs.add(ChatMsg(o.optString("role") != "model", o.optString("text")))
+        }
+    }
     DisposableEffect(Unit) {
-        CosmoBrain.onQueueResult = { _, _, r -> reply = r }
+        CosmoBrain.onQueueResult = { kind, _, r -> if (kind == "chat") msgs.add(ChatMsg(false, r)) }
         onDispose { CosmoBrain.onQueueResult = null }
     }
-    LaunchedEffect(Unit) {
-        while (true) {
-            queued = withContext(Dispatchers.IO) { CosmoBrain.queueSize() }
-            delay(3000)
-        }
+    LaunchedEffect(msgs.size, busy) {
+        val n = msgs.size + (if (busy) 1 else 0)
+        if (n > 0) listState.animateScrollToItem(n - 1)
     }
 
-    fun run(block: ((BrainReply) -> Unit) -> Unit) {
+    fun send(shown: String, block: ((BrainReply) -> Unit) -> Unit) {
         if (busy) return
         busy = true
-        reply = "PROCESSING..."
-        block {
+        msgs.add(ChatMsg(true, shown))
+        block { r ->
             busy = false
-            reply = it.text
+            msgs.add(ChatMsg(false, r.text))
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-    ) {
-        SectionLabel("COSMO BRAIN // GEMINI FLASH")
-        Text(
-            text = "QUEUED REQUESTS: $queued",
-            color = CosmoColors.Cyan.copy(alpha = 0.6f),
-            fontSize = 11.sp,
-            letterSpacing = 1.sp
-        )
-        Spacer(Modifier.height(12.dp))
-
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                SectionLabel("COSMO CHAT")
+                Text(
+                    text = aiStatus(),
+                    color = CosmoColors.Cyan.copy(alpha = 0.65f),
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+            ChipButton("CLEAR", CosmoColors.Crimson, Modifier.width(80.dp)) {
+                msgs.clear()
+                Thread { CosmoBrain.updateMemory { it.put("chat", JSONArray()) } }.start()
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             ChipButton("BRIEFING", CosmoColors.Cyan, Modifier.weight(1f)) {
-                run { cb -> CosmoBrain.dailyBriefing(cb) }
+                send("Briefing") { cb -> CosmoBrain.dailyBriefing(cb) }
             }
             ChipButton("DISCIPLINE", CosmoColors.Amber, Modifier.weight(1f)) {
-                run { cb -> CosmoBrain.disciplineAdvice(cb) }
+                send("Discipline") { cb -> CosmoBrain.disciplineAdvice(cb) }
             }
         }
-
-        Spacer(Modifier.height(14.dp))
-
-        CosmoField(
-            value = input,
-            onChange = { input = it },
-            label = "Ask Cosmo",
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = false
-        )
         Spacer(Modifier.height(10.dp))
-        ChipButton("SEND", CosmoColors.Cyan, Modifier.fillMaxWidth()) {
-            val p = input.trim()
-            if (p.isNotEmpty() && !busy) {
-                input = ""
-                run { cb -> CosmoBrain.ask(p, "chat", cb) }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (msgs.isEmpty()) {
+                item {
+                    GlassCard(Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Ask me anything. Say \"remember ...\" and I will keep it as a note about you.",
+                            color = Color.White.copy(alpha = 0.75f),
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp
+                        )
+                    }
+                }
             }
+            items(msgs.size) { i -> ChatBubble(msgs[i]) }
+            if (busy) item { ChatBubble(ChatMsg(false, "…")) }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        if (reply.isNotEmpty()) {
-            GlassCard(Modifier.fillMaxWidth()) {
-                Text(
-                    text = reply,
-                    color = CosmoColors.Cyan,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CosmoField(
+                value = input,
+                onChange = { input = it },
+                label = "Message",
+                modifier = Modifier.weight(1f),
+                singleLine = false
+            )
+            Spacer(Modifier.width(8.dp))
+            ChipButton("SEND", CosmoColors.Cyan, Modifier.width(72.dp)) {
+                val p = input.trim()
+                if (p.isNotEmpty() && !busy) {
+                    input = ""
+                    send(p) { cb -> CosmoBrain.ask(p, "chat", cb) }
+                }
             }
         }
     }
@@ -640,13 +733,36 @@ fun SettingsScreen() {
     var key by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf(0) }
     var intensity by remember { mutableStateOf(RedOverlayService.getIntensity(ctx)) }
     var overlayOk by remember { mutableStateOf(Settings.canDrawOverlays(ctx)) }
     var storageOk by remember { mutableStateOf(CosmoBrain.hasStorageAccess()) }
     var overlayOn by remember { mutableStateOf(RedOverlayService.isRunning()) }
 
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            msg = "COPYING MODEL... (can take a minute)"
+            Thread {
+                try {
+                    val out = LocalAI.modelFile(ctx)
+                    out.parentFile?.mkdirs()
+                    ctx.contentResolver.openInputStream(uri)?.use { inp ->
+                        out.outputStream().use { o -> inp.copyTo(o, 1 shl 16) }
+                    }
+                    LocalAI.release()
+                    Prefs.modelPath = out.absolutePath
+                    Prefs.save()
+                    msg = "MODEL READY · ${out.length() / 1_000_000} MB"
+                } catch (e: Exception) {
+                    msg = "MODEL COPY FAILED: ${e.message}"
+                }
+            }.start()
+        }
+    }
+
     LaunchedEffect(Unit) {
         key = withContext(Dispatchers.IO) { CosmoBrain.getApiKey() }
+        notes = withContext(Dispatchers.IO) { CosmoBrain.listFacts().size }
     }
     LaunchedEffect(Unit) {
         while (true) {
@@ -662,99 +778,247 @@ fun SettingsScreen() {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        SectionLabel("GEMINI API KEY")
-        Spacer(Modifier.height(8.dp))
-        CosmoField(
-            value = key,
-            onChange = { key = it },
-            label = "API key (/sdcard/CosmoData/api_key.txt)",
-            modifier = Modifier.fillMaxWidth(),
-            visual = if (showKey) VisualTransformation.None else PasswordVisualTransformation()
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            ChipButton(if (showKey) "HIDE" else "SHOW", CosmoColors.Cyan, Modifier.weight(1f)) {
-                showKey = !showKey
-            }
-            ChipButton("SAVE KEY", CosmoColors.Amber, Modifier.weight(1f)) {
-                val k = key
-                Thread {
-                    val ok = CosmoBrain.setApiKey(k)
-                    msg = if (ok) "KEY SAVED" else "SAVE FAILED · CHECK STORAGE ACCESS"
-                    if (ok) CosmoBrain.syncQueueAsync()
-                }.start()
-            }
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        SectionLabel("RED FILTER INTENSITY")
-        Slider(
-            value = intensity,
-            onValueChange = {
-                intensity = it
-                RedOverlayService.setIntensity(ctx, it)
-            },
-            colors = SliderDefaults.colors(
-                thumbColor = CosmoColors.Crimson,
-                activeTrackColor = CosmoColors.Crimson,
-                inactiveTrackColor = CosmoColors.Dim
+        // ---------- profile ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("PROFILE · COSMO KNOWS YOU")
+            Spacer(Modifier.height(8.dp))
+            CosmoField(
+                value = Prefs.userName,
+                onChange = { Prefs.userName = it; Prefs.save() },
+                label = "Your name",
+                modifier = Modifier.fillMaxWidth()
             )
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            ChipButton("PREVIEW ON", CosmoColors.Crimson, Modifier.weight(1f)) {
-                if (Settings.canDrawOverlays(ctx)) {
-                    RootShell.startOverlay(ctx)
-                } else {
-                    msg = "GRANT OVERLAY PERMISSION FIRST"
+            Spacer(Modifier.height(8.dp))
+            CosmoField(
+                value = Prefs.about,
+                onChange = { Prefs.about = it; Prefs.save() },
+                label = "About you (job, goals, interests)",
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "SAVED NOTES: $notes",
+                    color = CosmoColors.Cyan.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                ChipButton("CLEAR NOTES", CosmoColors.Crimson, Modifier.width(120.dp)) {
+                    Thread {
+                        CosmoBrain.clearFacts()
+                        notes = 0
+                    }.start()
                 }
             }
-            ChipButton("PREVIEW OFF", CosmoColors.Cyan, Modifier.weight(1f)) {
-                RootShell.stopOverlay(ctx)
-            }
         }
-        Text(
-            text = if (overlayOn) "OVERLAY: RUNNING" else "OVERLAY: STOPPED",
-            color = CosmoColors.Cyan.copy(alpha = 0.6f),
-            fontSize = 11.sp,
-            letterSpacing = 1.sp,
-            modifier = Modifier.padding(top = 6.dp)
-        )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
 
-        SectionLabel("PERMISSIONS")
-        Spacer(Modifier.height(8.dp))
-        ChipButton(
-            text = if (overlayOk) "OVERLAY: GRANTED" else "OVERLAY: GRANT",
-            color = if (overlayOk) CosmoColors.Cyan else CosmoColors.Amber,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ctx.startActivity(
-                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // ---------- ai behaviour ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("AI PERSONALITY")
+            Spacer(Modifier.height(8.dp))
+            ChoiceRow(
+                options = listOf("BUTLER" to "BUTLER", "FRIEND" to "FRIEND", "CONCISE" to "SHORT"),
+                selected = Prefs.style,
+                onSelect = { Prefs.style = it; Prefs.save() }
+            )
+            Spacer(Modifier.height(14.dp))
+            SectionLabel("LANGUAGE")
+            Spacer(Modifier.height(8.dp))
+            ChoiceRow(
+                options = listOf("AUTO" to "AUTO", "EN" to "ENGLISH", "MN" to "МОНГОЛ"),
+                selected = Prefs.language,
+                onSelect = { Prefs.language = it; Prefs.save() }
+            )
+            Spacer(Modifier.height(8.dp))
+            SettingSwitch(
+                title = "Offline only",
+                subtitle = "Never send chats to the internet",
+                checked = Prefs.offlineOnly,
+                onChange = { Prefs.offlineOnly = it; Prefs.save() }
+            )
+            Text(
+                text = aiStatus(),
+                color = CosmoColors.Cyan.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
             )
         }
-        Spacer(Modifier.height(8.dp))
-        ChipButton(
-            text = if (storageOk) "ALL FILES ACCESS: GRANTED" else "ALL FILES ACCESS: GRANT",
-            color = if (storageOk) CosmoColors.Cyan else CosmoColors.Amber,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            ctx.startActivity(CosmoBrain.storageSettingsIntent(ctx))
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- cloud ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("GOOGLE GEMINI (ONLINE)")
+            Spacer(Modifier.height(8.dp))
+            CosmoField(
+                value = key,
+                onChange = { key = it },
+                label = "Gemini API key",
+                modifier = Modifier.fillMaxWidth(),
+                visual = if (showKey) VisualTransformation.None else PasswordVisualTransformation()
+            )
+            Spacer(Modifier.height(8.dp))
+            CosmoField(
+                value = Prefs.cloudModel,
+                onChange = { Prefs.cloudModel = it; Prefs.save() },
+                label = "Model (default gemini-flash-latest)",
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ChipButton(if (showKey) "HIDE" else "SHOW", CosmoColors.Cyan, Modifier.weight(1f)) {
+                    showKey = !showKey
+                }
+                ChipButton("SAVE KEY", CosmoColors.Amber, Modifier.weight(1f)) {
+                    CosmoBrain.setApiKey(key)
+                    msg = "KEY SAVED"
+                }
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        ChipButton("TEST ROOT ACCESS", CosmoColors.Cyan, Modifier.fillMaxWidth()) {
-            msg = "CHECKING ROOT..."
-            Thread {
-                msg = if (RootShell.isRootAvailable()) "ROOT: GRANTED" else "ROOT: DENIED"
-            }.start()
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- local model ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("OFFLINE AI MODEL")
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = if (LocalAI.isModelReady()) "STATUS: MODEL INSTALLED" else "STATUS: NO MODEL (BASIC OFFLINE MODE)",
+                color = if (LocalAI.isModelReady()) CosmoColors.Cyan else CosmoColors.Amber,
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = "Pick a Gemma .task model file (for example Gemma 3 1B int4) from your phone storage. It runs fully on-device.",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ChipButton("PICK MODEL", CosmoColors.Cyan, Modifier.weight(1f)) {
+                    picker.launch(arrayOf("*/*"))
+                }
+                ChipButton("REMOVE", CosmoColors.Crimson, Modifier.weight(1f)) {
+                    Thread {
+                        LocalAI.release()
+                        if (Prefs.modelPath.isNotEmpty()) File(Prefs.modelPath).delete()
+                        Prefs.modelPath = ""
+                        Prefs.save()
+                        msg = "MODEL REMOVED"
+                    }.start()
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- theme ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("ACCENT COLOUR")
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Prefs.ACCENTS.forEachIndexed { i, (_, c) ->
+                    val sel = Prefs.accent == i
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .background(c.copy(alpha = 0.22f), CircleShape)
+                            .border(if (sel) 2.dp else 1.dp, if (sel) c else CosmoColors.Dim, CircleShape)
+                            .clickable { Prefs.accent = i; Prefs.save() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.size(16.dp).background(c, CircleShape))
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- red filter ----------
+        GlassCard(Modifier.fillMaxWidth(), accent = CosmoColors.Crimson) {
+            SectionLabel("RED FILTER INTENSITY", CosmoColors.Crimson)
+            Slider(
+                value = intensity,
+                onValueChange = {
+                    intensity = it
+                    RedOverlayService.setIntensity(ctx, it)
+                },
+                colors = SliderDefaults.colors(
+                    thumbColor = CosmoColors.Crimson,
+                    activeTrackColor = CosmoColors.Crimson,
+                    inactiveTrackColor = CosmoColors.Dim
+                )
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ChipButton("PREVIEW ON", CosmoColors.Crimson, Modifier.weight(1f)) {
+                    if (Settings.canDrawOverlays(ctx)) {
+                        RootShell.startOverlay(ctx)
+                    } else {
+                        msg = "GRANT OVERLAY PERMISSION FIRST"
+                    }
+                }
+                ChipButton("PREVIEW OFF", CosmoColors.Cyan, Modifier.weight(1f)) {
+                    RootShell.stopOverlay(ctx)
+                }
+            }
+            Text(
+                text = if (overlayOn) "OVERLAY: RUNNING" else "OVERLAY: STOPPED",
+                color = CosmoColors.Cyan.copy(alpha = 0.6f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- permissions ----------
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("PERMISSIONS")
+            Spacer(Modifier.height(8.dp))
+            ChipButton(
+                text = if (overlayOk) "OVERLAY: GRANTED" else "OVERLAY: GRANT",
+                color = if (overlayOk) CosmoColors.Cyan else CosmoColors.Amber,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ctx.startActivity(
+                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            ChipButton(
+                text = if (storageOk) "ALL FILES (OPTIONAL): GRANTED" else "ALL FILES (OPTIONAL): GRANT",
+                color = if (storageOk) CosmoColors.Cyan else CosmoColors.Amber,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ctx.startActivity(CosmoBrain.storageSettingsIntent(ctx))
+            }
+            Spacer(Modifier.height(8.dp))
+            ChipButton("TEST ROOT ACCESS", CosmoColors.Cyan, Modifier.fillMaxWidth()) {
+                msg = "CHECKING ROOT..."
+                Thread {
+                    msg = if (RootShell.isRootAvailable()) "ROOT: GRANTED" else "ROOT: DENIED"
+                }.start()
+            }
         }
 
         if (msg.isNotEmpty()) {
@@ -766,5 +1030,6 @@ fun SettingsScreen() {
                 letterSpacing = 1.sp
             )
         }
+        Spacer(Modifier.height(8.dp))
     }
 }

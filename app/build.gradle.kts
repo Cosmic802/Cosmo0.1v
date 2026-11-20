@@ -11,8 +11,13 @@ android {
         applicationId = "com.cosmic802.cosmo"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "0.2"
+
+        // keeps the APK small (MediaPipe ships native libraries per CPU type)
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -53,4 +58,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
+
+    // On-device (offline) LLM runtime. Model file is picked by the user in Settings.
+    implementation("com.google.mediapipe:tasks-genai:0.10.27")
 }

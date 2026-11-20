@@ -21,7 +21,7 @@
     </queries>
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="Cosmo"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
