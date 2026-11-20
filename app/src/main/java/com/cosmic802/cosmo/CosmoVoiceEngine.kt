@@ -34,6 +34,10 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
         private const val ARM_WINDOW_MS = 8000L
         private const val SPEAK_WATCHDOG_MS = 15000L
 
+        private val ADD_TASK_RE = Regex("(?:add|new|create)\\s+(?:a\\s+)?task\\s+(.+)")
+        private val REMIND_RE = Regex("(?:remind me to|reminder to)\\s+(.+)")
+        private val ASK_RE = Regex("\\bask\\s+(.+)")
+
         @Volatile
         private var instance: CosmoVoiceEngine? = null
 
@@ -88,6 +92,7 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        CosmoBrain.init(this)
         tts = TextToSpeech(this, this)
         setupTorch()
     }
@@ -226,11 +231,9 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
             val t = raw.lowercase(Locale.UK).trim()
             val hasName = t.contains("cosmo") || t.contains("kosmo") || t.contains("cosmos")
             if (!hasName && !armed) continue
-            val cmd = parse(t)
-            if (cmd != null) {
+            if (runCommand(t)) {
                 armedUntil = 0L
                 onHeard?.invoke(raw)
-                execute(cmd)
                 return
             }
             if (hasName) {
@@ -240,6 +243,35 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
                 return
             }
         }
+    }
+
+    private fun clean(s: String): String = s.trim().trim('.', ',', '?', '!').trim()
+
+    private fun runCommand(t: String): Boolean {
+        ADD_TASK_RE.find(t)?.let {
+            addTask(clean(it.groupValues[1]))
+            return true
+        }
+        REMIND_RE.find(t)?.let {
+            addTask(clean(it.groupValues[1]))
+            return true
+        }
+        ASK_RE.find(t)?.let {
+            askAi(clean(it.groupValues[1]))
+            return true
+        }
+        val words = t.split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
+        if (words.contains("tasks")) {
+            listTasks()
+            return true
+        }
+        if (words.contains("briefing")) {
+            CosmoBrain.dailyBriefing { speak(spoken(it.text)) }
+            return true
+        }
+        val cmd = parse(t) ?: return false
+        execute(cmd)
+        return true
     }
 
     private fun parse(t: String): String? {
@@ -291,6 +323,41 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
             }
         }
     }
+
+    // ---------- tasks and AI ----------
+
+    private fun addTask(title: String) {
+        Thread {
+            val ok = TaskStore.add(title)
+            handler.post {
+                speak(if (ok) "Task added, Sir." else "I could not save the task, Sir.")
+            }
+        }.start()
+    }
+
+    private fun listTasks() {
+        Thread {
+            val open = TaskStore.list().filter { !it.done }
+            val msg = if (open.isEmpty()) {
+                "You have no open tasks, Sir."
+            } else {
+                "You have ${open.size} open tasks, Sir. " +
+                    open.take(3).joinToString(". ") { it.title }
+            }
+            handler.post { speak(msg) }
+        }.start()
+    }
+
+    private fun askAi(question: String) {
+        if (question.isEmpty()) {
+            speak("What shall I ask, Sir?")
+            return
+        }
+        CosmoBrain.ask(question, "chat") { speak(spoken(it.text)) }
+    }
+
+    private fun spoken(s: String): String =
+        s.replace(Regex("[*#_`]"), "").take(400)
 
     // ---------- flashlight ----------
 

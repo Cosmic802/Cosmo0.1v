@@ -8,8 +8,16 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -17,8 +25,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -32,6 +43,7 @@ object CosmoColors {
     val Cyan = Color(0xFF00E5FF)
     val Amber = Color(0xFFFFB300)
     val Crimson = Color(0xFFFF1744)
+    val Violet = Color(0xFF7C4DFF)
     val Panel = Color(0xFF0B121A)
     val Dim = Color(0xFF1B2A36)
 }
@@ -50,6 +62,60 @@ private val CosmoScheme = darkColorScheme(
 @Composable
 fun CosmoTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = CosmoScheme, content = content)
+}
+
+@Composable
+fun CosmoBackground(
+    accent: Color = CosmoColors.Cyan,
+    modifier: Modifier = Modifier.fillMaxSize(),
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .background(CosmoColors.Black)
+            .drawBehind {
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.16f), Color.Transparent),
+                        center = Offset(size.width * 0.85f, size.height * 0.05f),
+                        radius = size.width * 0.95f
+                    )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(CosmoColors.Violet.copy(alpha = 0.13f), Color.Transparent),
+                        center = Offset(size.width * 0.05f, size.height * 0.95f),
+                        radius = size.width * 0.95f
+                    )
+                )
+            }
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    accent: Color = CosmoColors.Cyan,
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        modifier = modifier
+            .background(
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.09f), Color.White.copy(alpha = 0.03f))
+                ),
+                shape
+            )
+            .border(1.dp, accent.copy(alpha = 0.28f), shape)
+            .clip(shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(14.dp),
+        content = content
+    )
 }
 
 @Composable

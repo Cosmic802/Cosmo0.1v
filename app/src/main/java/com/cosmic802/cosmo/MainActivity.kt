@@ -25,7 +25,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
@@ -47,12 +49,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.Calendar
 
 enum class CosmoMode(val label: String, val color: Color) {
     STUDY("STUDY", CosmoColors.Cyan),
@@ -82,57 +86,60 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CosmoApp() {
     var tab by remember { mutableStateOf(0) }
-    val tabs = listOf("HUD", "LIFE", "STUDY", "BRAIN", "SYS")
+    val tabs = listOf("HUD", "TASKS", "LIFE", "STUDY", "BRAIN", "SYS")
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(CosmoColors.Black)
-            .systemBarsPadding()
-            .imePadding()
-    ) {
-        Box(
+    CosmoBackground(accent = ModeState.mode.color) {
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .fillMaxSize()
+                .systemBarsPadding()
+                .imePadding()
         ) {
-            when (tab) {
-                0 -> HudScreen()
-                1 -> HabitScreen(Modifier.fillMaxSize())
-                2 -> StudyPlayerScreen(Modifier.fillMaxSize())
-                3 -> BrainScreen()
-                else -> SettingsScreen()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                when (tab) {
+                    0 -> HudScreen(onNavigate = { tab = it })
+                    1 -> TasksScreen(Modifier.fillMaxSize())
+                    2 -> HabitScreen(Modifier.fillMaxSize())
+                    3 -> StudyPlayerScreen(Modifier.fillMaxSize())
+                    4 -> BrainScreen()
+                    else -> SettingsScreen()
+                }
             }
-        }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(CosmoColors.Panel)
-        ) {
-            tabs.forEachIndexed { i, name ->
-                val sel = i == tab
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp)
-                        .clickable { tab = i },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 28.dp, height = 3.dp)
-                                .background(if (sel) CosmoColors.Cyan else Color.Transparent)
-                        )
-                        Spacer(Modifier.height(8.dp))
+            val navShape = RoundedCornerShape(24.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .background(CosmoColors.Panel.copy(alpha = 0.9f), navShape)
+                    .border(1.dp, CosmoColors.Dim, navShape)
+                    .padding(4.dp)
+            ) {
+                tabs.forEachIndexed { i, name ->
+                    val sel = i == tab
+                    val itemShape = RoundedCornerShape(20.dp)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .background(
+                                if (sel) CosmoColors.Cyan.copy(alpha = 0.15f) else Color.Transparent,
+                                itemShape
+                            )
+                            .clickable { tab = i },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
                             text = name,
                             color = if (sel) CosmoColors.Cyan else CosmoColors.Cyan.copy(alpha = 0.45f),
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
@@ -142,7 +149,47 @@ fun CosmoApp() {
 }
 
 @Composable
-fun HudScreen() {
+fun ModeOrb(
+    target: CosmoMode,
+    selected: Boolean,
+    symbol: String,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(60.dp)
+                .background(
+                    if (selected) target.color.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.05f),
+                    CircleShape
+                )
+                .border(
+                    if (selected) 2.dp else 1.dp,
+                    if (selected) target.color else CosmoColors.Dim,
+                    CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = symbol, color = target.color, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = target.label,
+            color = if (selected) target.color else target.color.copy(alpha = 0.6f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp
+        )
+    }
+}
+
+@Composable
+fun HudScreen(onNavigate: (Int) -> Unit) {
     val ctx = LocalContext.current
     val mode = ModeState.mode
     var busy by remember { mutableStateOf(false) }
@@ -150,6 +197,16 @@ fun HudScreen() {
     var day by remember { mutableStateOf(JSONObject()) }
     var windLeft by remember { mutableStateOf(0L) }
     var voiceOn by remember { mutableStateOf(CosmoVoiceEngine.isRunning()) }
+    var overlayOn by remember { mutableStateOf(RedOverlayService.isRunning()) }
+    var openTasks by remember { mutableStateOf(0) }
+    var queued by remember { mutableStateOf(0) }
+
+    val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+    val greet = when {
+        hour < 12 -> "Good morning"
+        hour < 18 -> "Good afternoon"
+        else -> "Good evening"
+    }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -165,15 +222,21 @@ fun HudScreen() {
     LaunchedEffect(Unit) {
         while (true) {
             day = withContext(Dispatchers.IO) { HabitStore.load() }
-            delay(10_000)
+            openTasks = withContext(Dispatchers.IO) { TaskStore.list().count { !it.done } }
+            queued = withContext(Dispatchers.IO) { CosmoBrain.queueSize() }
+            delay(8000)
         }
     }
     LaunchedEffect(Unit) {
         while (true) {
             windLeft = RootShell.windDownRemainingMs()
             voiceOn = CosmoVoiceEngine.isRunning()
+            overlayOn = RedOverlayService.isRunning()
             delay(1000)
         }
+    }
+    LaunchedEffect(Unit) {
+        if (!StudyPlayer.scanned) StudyPlayer.refresh()
     }
 
     fun setMode(m: CosmoMode) {
@@ -191,43 +254,93 @@ fun HudScreen() {
         }
     }
 
+    fun toggleVoice() {
+        if (voiceOn) {
+            CosmoVoiceEngine.stop(ctx)
+            voiceOn = false
+        } else if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            CosmoVoiceEngine.start(ctx)
+            voiceOn = true
+        } else {
+            permLauncher.launch(
+                arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+            )
+        }
+    }
+
+    fun toggleOverlay() {
+        if (overlayOn) {
+            RootShell.stopOverlay(ctx)
+            overlayOn = false
+        } else if (Settings.canDrawOverlays(ctx)) {
+            RootShell.startOverlay(ctx)
+            overlayOn = true
+        } else {
+            status = "GRANT OVERLAY IN SYS TAB"
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .verticalScroll(rememberScrollState())
     ) {
         Text(
-            text = "C O S M O",
-            color = CosmoColors.Cyan,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 4.sp
+            text = "$greet, Sir.",
+            color = CosmoColors.Cyan.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            letterSpacing = 1.sp
         )
         Text(
-            text = "J.A.R.V.I.S. CORE // ONLINE",
-            color = CosmoColors.Amber,
-            fontSize = 11.sp,
-            letterSpacing = 2.sp
+            text = "Your Day,",
+            color = Color.White,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold
         )
-
-        Spacer(Modifier.height(20.dp))
-
-        CoreVisualizer(modifier = Modifier.size(230.dp), accent = mode.color)
+        Text(
+            text = "Your Way.",
+            color = mode.color,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold
+        )
 
         Spacer(Modifier.height(14.dp))
 
-        Text(
-            text = "MODE: ${mode.label}",
-            color = mode.color,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 3.sp
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            GlassCard(Modifier.weight(1f), accent = mode.color) {
+                Text("SYSTEM", color = CosmoColors.Amber, fontSize = 10.sp, letterSpacing = 2.sp)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = mode.label,
+                    color = mode.color,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (voiceOn) "● VOICE ON" else "○ VOICE OFF",
+                    color = CosmoColors.Cyan.copy(alpha = 0.8f),
+                    fontSize = 11.sp
+                )
+                Text(
+                    text = "QUEUE: $queued",
+                    color = CosmoColors.Cyan.copy(alpha = 0.6f),
+                    fontSize = 11.sp
+                )
+            }
+            CoreVisualizer(modifier = Modifier.size(130.dp), accent = mode.color)
+        }
+
         if (status.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = status,
-                color = if (status.contains("DENIED")) CosmoColors.Crimson else CosmoColors.Cyan.copy(alpha = 0.7f),
+                color = if (status.contains("DENIED") || status.contains("GRANT")) CosmoColors.Crimson else CosmoColors.Cyan.copy(alpha = 0.7f),
                 fontSize = 11.sp,
                 letterSpacing = 1.sp
             )
@@ -242,61 +355,157 @@ fun HudScreen() {
             )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            StatusRing(
-                label = "WATER",
-                progress = HabitStore.water(day).toFloat() / HabitStore.WATER_GOAL
-            )
-            StatusRing(
-                label = "STEPS",
-                progress = HabitStore.steps(day).toFloat() / HabitStore.STEPS_GOAL,
-                color = CosmoColors.Amber
-            )
-            StatusRing(label = "HABITS", progress = HabitStore.progress(day))
+        GlassCard(Modifier.fillMaxWidth(), accent = mode.color) {
+            Text("Mode Control", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                ModeOrb(CosmoMode.STUDY, mode == CosmoMode.STUDY, "✎") { setMode(CosmoMode.STUDY) }
+                ModeOrb(CosmoMode.GAME, mode == CosmoMode.GAME, "◈") { setMode(CosmoMode.GAME) }
+                ModeOrb(CosmoMode.SLEEP, mode == CosmoMode.SLEEP, "☾") { setMode(CosmoMode.SLEEP) }
+                ModeOrb(CosmoMode.NORMAL, mode == CosmoMode.NORMAL, "☀") { setMode(CosmoMode.NORMAL) }
+            }
         }
 
-        Spacer(Modifier.height(22.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ModeButton(CosmoMode.STUDY, mode == CosmoMode.STUDY, Modifier.weight(1f)) { setMode(CosmoMode.STUDY) }
-            ModeButton(CosmoMode.GAME, mode == CosmoMode.GAME, Modifier.weight(1f)) { setMode(CosmoMode.GAME) }
-        }
         Spacer(Modifier.height(12.dp))
+
+        GlassCard(Modifier.fillMaxWidth()) {
+            Text("Today", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatusRing(
+                    label = "WATER",
+                    progress = HabitStore.water(day).toFloat() / HabitStore.WATER_GOAL
+                )
+                StatusRing(
+                    label = "STEPS",
+                    progress = HabitStore.steps(day).toFloat() / HabitStore.STEPS_GOAL,
+                    color = CosmoColors.Amber
+                )
+                StatusRing(label = "HABITS", progress = HabitStore.progress(day))
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ModeButton(CosmoMode.SLEEP, mode == CosmoMode.SLEEP, Modifier.weight(1f)) { setMode(CosmoMode.SLEEP) }
-            ModeButton(CosmoMode.NORMAL, mode == CosmoMode.NORMAL, Modifier.weight(1f)) { setMode(CosmoMode.NORMAL) }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        ChipButton(
-            text = if (voiceOn) "VOICE: ON  (TAP TO STOP)" else "VOICE: OFF  (TAP TO START)",
-            color = if (voiceOn) CosmoColors.Amber else CosmoColors.Cyan,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (voiceOn) {
-                CosmoVoiceEngine.stop(ctx)
-                voiceOn = false
-            } else if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                CosmoVoiceEngine.start(ctx)
-                voiceOn = true
-            } else {
-                permLauncher.launch(
-                    arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+            GlassCard(
+                Modifier.weight(1f).height(84.dp),
+                accent = if (voiceOn) CosmoColors.Amber else CosmoColors.Cyan,
+                onClick = { toggleVoice() }
+            ) {
+                Text("Voice", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (voiceOn) "LISTENING · TAP TO STOP" else "OFF · TAP TO START",
+                    color = if (voiceOn) CosmoColors.Amber else CosmoColors.Cyan.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+            GlassCard(
+                Modifier.weight(1f).height(84.dp),
+                accent = if (overlayOn) CosmoColors.Crimson else CosmoColors.Cyan,
+                onClick = { toggleOverlay() }
+            ) {
+                Text("Red Filter", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (overlayOn) "RUNNING · TAP TO STOP" else "OFF · TAP TO START",
+                    color = if (overlayOn) CosmoColors.Crimson else CosmoColors.Cyan.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    letterSpacing = 1.sp
                 )
             }
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            GlassCard(
+                Modifier.weight(1f).height(84.dp),
+                onClick = { onNavigate(1) }
+            ) {
+                Text("Tasks", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "$openTasks OPEN",
+                    color = CosmoColors.Amber,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+            GlassCard(
+                Modifier.weight(1f).height(84.dp),
+                onClick = { onNavigate(4) }
+            ) {
+                Text("Briefing", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "ASK COSMO",
+                    color = CosmoColors.Cyan.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        val current = StudyPlayer.tracks.getOrNull(StudyPlayer.index)
+        GlassCard(Modifier.fillMaxWidth(), accent = CosmoColors.Amber) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(CosmoColors.Amber.copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("♪", color = CosmoColors.Amber, fontSize = 20.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = if (current != null) StudyPlayer.title(current) else "NO TRACK",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "STUDY PLAYER",
+                        color = CosmoColors.Amber,
+                        fontSize = 10.sp,
+                        letterSpacing = 2.sp
+                    )
+                }
+                ChipButton("‹‹", CosmoColors.Cyan, Modifier.width(44.dp)) { StudyPlayer.prev() }
+                Spacer(Modifier.width(6.dp))
+                ChipButton(
+                    if (StudyPlayer.playing) "II" else "▶",
+                    CosmoColors.Amber,
+                    Modifier.width(48.dp)
+                ) { StudyPlayer.toggle() }
+                Spacer(Modifier.width(6.dp))
+                ChipButton("››", CosmoColors.Cyan, Modifier.width(44.dp)) { StudyPlayer.next() }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -413,18 +622,14 @@ fun BrainScreen() {
         Spacer(Modifier.height(16.dp))
 
         if (reply.isNotEmpty()) {
-            val shape = RoundedCornerShape(12.dp)
-            Text(
-                text = reply,
-                color = CosmoColors.Cyan,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(CosmoColors.Panel, shape)
-                    .border(1.dp, CosmoColors.Dim, shape)
-                    .padding(14.dp)
-            )
+            GlassCard(Modifier.fillMaxWidth()) {
+                Text(
+                    text = reply,
+                    color = CosmoColors.Cyan,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            }
         }
     }
 }
@@ -561,38 +766,5 @@ fun SettingsScreen() {
                 letterSpacing = 1.sp
             )
         }
-    }
-}
-
-@Composable
-fun ModeButton(
-    target: CosmoMode,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(14.dp)
-    Box(
-        modifier = modifier
-            .height(56.dp)
-            .background(
-                if (selected) target.color.copy(alpha = 0.18f) else CosmoColors.Panel,
-                shape
-            )
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) target.color else CosmoColors.Dim,
-                shape = shape
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = target.label,
-            color = if (selected) target.color else target.color.copy(alpha = 0.6f),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.sp
-        )
     }
 }
