@@ -28,6 +28,8 @@ object Prefs {
     var modelPath by mutableStateOf("")
     var cloudModel by mutableStateOf("gemini-4-hydrogen")
     var speakReplies by mutableStateOf(false)
+    var wakeEnabled by mutableStateOf(true)
+    var wakeWord by mutableStateOf("cosmo")
     var autoTrack by mutableStateOf(true)
     var trackInAi by mutableStateOf(true)
     var screenLimitH by mutableStateOf(4f)
@@ -50,6 +52,8 @@ object Prefs {
         // old default -> new free-tier default
         if (cloudModel == "gemini-flash-latest") cloudModel = "gemini-4-hydrogen"
         speakReplies = p.getBoolean("speakReplies", false)
+        wakeEnabled = p.getBoolean("wakeEnabled", true)
+        wakeWord = p.getString("wakeWord", "cosmo") ?: "cosmo"
         autoTrack = p.getBoolean("autoTrack", true)
         trackInAi = p.getBoolean("trackInAi", true)
         screenLimitH = p.getFloat("screenLimitH", 4f)
@@ -69,6 +73,8 @@ object Prefs {
             ?.putString("modelPath", modelPath)
             ?.putString("cloudModel", cloudModel.trim().ifEmpty { "gemini-4-hydrogen" })
             ?.putBoolean("speakReplies", speakReplies)
+            ?.putBoolean("wakeEnabled", wakeEnabled)
+            ?.putString("wakeWord", wakeWord.trim().ifEmpty { "cosmo" })
             ?.putBoolean("autoTrack", autoTrack)
             ?.putBoolean("trackInAi", trackInAi)
             ?.putFloat("screenLimitH", screenLimitH)

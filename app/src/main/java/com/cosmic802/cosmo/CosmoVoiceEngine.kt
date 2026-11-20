@@ -77,6 +77,7 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
     private var stopped = false
     private var armedUntil = 0L
     private var errorStreak = 0
+    private var offlineFailed = false
     private var utteranceId = 0
 
     private var cameraManager: CameraManager? = null
@@ -103,11 +104,24 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
             return START_NOT_STICKY
         }
 
-        startAsForeground()
+        VoiceState.error = null
+        VoiceState.status = "STARTING..."
 
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED ||
-            !SpeechRecognizer.isRecognitionAvailable(this)
-        ) {
+        try {
+            startAsForeground()
+        } catch (e: Exception) {
+            VoiceState.error = "Cannot start voice service: ${e.message ?: "unknown"}"
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            VoiceState.error = "Mic permission missing. Allow microphone for Cosmo."
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            VoiceState.error = "No speech service on this phone. Install Google app / Speech Services."
             stopSelf()
             return START_NOT_STICKY
         }
@@ -132,7 +146,7 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
         )
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Cosmo")
-            .setContentText("Listening for \"Hey Cosmo\"")
+            .setContentText("Voice assistant is listening")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Stop", stopIntent).build())
@@ -168,8 +182,8 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
         val r = recognizer ?: return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, VoiceState.recognitionLocale())
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, !offlineFailed)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
@@ -183,7 +197,16 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
     }
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {}
+        override fun onReadyForSpeech(params: Bundle?) {
+            if (!speaking) VoiceState.status = if (armedUntil > SystemClock.elapsedRealtime()) {
+                "LISTENING FOR COMMAND..."
+            } else if (Prefs.wakeEnabled) {
+                "LISTENING FOR \"${Prefs.wakeWord.ifBlank { "cosmo" }.uppercase(Locale.ROOT)}\""
+            } else {
+                "LISTENING..."
+            }
+        }
+
         override fun onBeginningOfSpeech() {}
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
@@ -193,9 +216,11 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
 
         override fun onResults(results: Bundle?) {
             errorStreak = 0
+            VoiceState.error = null
             val list = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 .orEmpty()
+            if (list.isNotEmpty()) VoiceState.lastHeard = list[0]
             handle(list)
             if (!speaking) scheduleRestart(300)
         }
@@ -204,19 +229,45 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
             if (stopped) return
             when (error) {
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    VoiceState.error = "Mic permission missing. Allow microphone for Cosmo."
                     stopSelf()
                     return
                 }
-                SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
-                SpeechRecognizer.ERROR_CLIENT,
-                SpeechRecognizer.ERROR_SERVER -> {
+                // 12 = ERROR_LANGUAGE_NOT_SUPPORTED, 13 = ERROR_LANGUAGE_UNAVAILABLE (API 31+)
+                12, 13 -> {
                     errorStreak++
-                    createRecognizer()
-                    if (!speaking) scheduleRestart(minOf(5000L, 800L * errorStreak))
+                    if (!offlineFailed) {
+                        offlineFailed = true
+                        VoiceState.status = "OFFLINE PACK MISSING · USING ONLINE SPEECH"
+                        if (!speaking) scheduleRestart(300)
+                    } else {
+                        VoiceState.error = "Language ${VoiceState.recognitionLocale()} not supported by speech service"
+                        if (!speaking) scheduleRestart(minOf(8000L, 1500L * errorStreak))
+                    }
+                }
+                SpeechRecognizer.ERROR_NETWORK,
+                SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> {
+                    errorStreak++
+                    VoiceState.status = "NO INTERNET · OFFLINE SPEECH PACK NEEDED"
+                    if (!speaking) scheduleRestart(minOf(5000L, 1000L * errorStreak))
+                }
+                SpeechRecognizer.ERROR_AUDIO -> {
+                    errorStreak++
+                    VoiceState.status = "MICROPHONE BUSY OR UNAVAILABLE"
+                    if (!speaking) scheduleRestart(minOf(5000L, 1000L * errorStreak))
+                }
+                SpeechRecognizer.ERROR_NO_MATCH,
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                    if (!speaking) scheduleRestart(200)
                 }
                 else -> {
                     errorStreak++
-                    if (!speaking) scheduleRestart(minOf(3000L, 250L * errorStreak))
+                    createRecognizer()
+                    VoiceState.status = "SPEECH SERVICE ERROR ($error) · RETRYING"
+                    if (errorStreak >= 6) {
+                        VoiceState.error = "Speech service keeps failing (code $error)"
+                    }
+                    if (!speaking) scheduleRestart(minOf(5000L, 800L * errorStreak))
                 }
             }
         }
@@ -228,20 +279,30 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
         val now = SystemClock.elapsedRealtime()
         val armed = now < armedUntil
         for (raw in candidates) {
-            val t = raw.lowercase(Locale.UK).trim()
-            val hasName = t.contains("cosmo") || t.contains("kosmo") || t.contains("cosmos")
-            if (!hasName && !armed) continue
-            if (runCommand(t)) {
-                armedUntil = 0L
-                onHeard?.invoke(raw)
-                return
-            }
-            if (hasName) {
+            val t = raw.lowercase(Locale.ROOT).trim()
+            if (t.isEmpty()) continue
+            val (hasName, rest) = VoiceState.splitWake(t)
+            val live = !Prefs.wakeEnabled || armed
+            if (!hasName && !live) continue
+
+            val text = clean(if (hasName) rest else t)
+            VoiceState.lastHeard = raw
+            onHeard?.invoke(raw)
+            armedUntil = 0L
+
+            if (text.isEmpty()) {
                 armedUntil = now + ARM_WINDOW_MS
-                onHeard?.invoke(raw)
                 speak("Yes, Sir?")
                 return
             }
+            if (runCommand(text)) return
+            if (text.length >= 3) {
+                askAi(text)
+            } else {
+                armedUntil = now + ARM_WINDOW_MS
+                speak("Yes, Sir?")
+            }
+            return
         }
     }
 
@@ -398,10 +459,7 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
         val t = tts ?: return
         if (status != TextToSpeech.SUCCESS) return
 
-        var r = t.setLanguage(Locale.UK)
-        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
-            r = t.setLanguage(Locale.US)
-        }
+        VoiceState.checkTtsLanguage(t)
         pickVoice(t)
         t.setPitch(0.85f)
         t.setSpeechRate(0.95f)
@@ -431,14 +489,14 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
 
     private fun pickVoice(t: TextToSpeech) {
         try {
+            val loc = t.voice?.locale ?: VoiceState.ttsLocale()
             val voices = t.voices
-                ?.filter {
-                    it.locale.language == "en" &&
-                        it.locale.country == "GB" &&
-                        !it.isNetworkConnectionRequired
-                }
+                ?.filter { it.locale.language == loc.language && !it.isNetworkConnectionRequired }
                 .orEmpty()
-            val v = voices.firstOrNull { isMaleVoiceName(it.name) } ?: voices.firstOrNull()
+            val v = voices.firstOrNull { isMaleVoiceName(it.name) && it.locale.country == loc.country }
+                ?: voices.firstOrNull { isMaleVoiceName(it.name) }
+                ?: voices.firstOrNull { it.locale.country == loc.country }
+                ?: voices.firstOrNull()
             if (v != null) t.voice = v
         } catch (_: Exception) {
         }
@@ -448,6 +506,7 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
         val t = tts
         if (stopped || t == null || !ttsReady) return
         speaking = true
+        VoiceState.status = "SPEAKING..."
         handler.removeCallbacks(restartTask)
         handler.removeCallbacks(speakWatchdog)
         try {
@@ -474,6 +533,7 @@ class CosmoVoiceEngine : Service(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         stopped = true
         instance = null
+        VoiceState.status = "OFF"
         handler.removeCallbacksAndMessages(null)
         try {
             recognizer?.destroy()

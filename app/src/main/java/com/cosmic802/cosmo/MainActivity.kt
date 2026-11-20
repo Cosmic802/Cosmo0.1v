@@ -2,6 +2,7 @@ package com.cosmic802.cosmo
 
 import android.Manifest
 import android.content.Intent
+import android.speech.RecognizerIntent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
@@ -455,10 +456,16 @@ fun HudScreen(onNavigate: (Int) -> Unit) {
                 Text("Voice", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (voiceOn) "LISTENING · TAP TO STOP" else "OFF · TAP TO START",
-                    color = if (voiceOn) CosmoColors.Amber else CosmoColors.Cyan.copy(alpha = 0.6f),
+                    text = if (voiceOn) {
+                        VoiceState.status
+                    } else {
+                        VoiceState.error ?: "OFF · TAP TO START"
+                    },
+                    color = if (voiceOn) CosmoColors.Amber else if (VoiceState.error != null) CosmoColors.Crimson else CosmoColors.Cyan.copy(alpha = 0.6f),
                     fontSize = 10.sp,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             GlassCard(
@@ -632,9 +639,11 @@ fun ChatBubble(m: ChatMsg) {
 
 @Composable
 fun BrainScreen() {
+    val ctx = LocalContext.current
     val msgs = remember { mutableStateListOf<ChatMsg>() }
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var micMsg by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
@@ -661,6 +670,42 @@ fun BrainScreen() {
         block { r ->
             busy = false
             msgs.add(ChatMsg(false, r.text))
+            if (Prefs.speakReplies && !r.error) Speaker.speak(ctx, r.text)
+        }
+    }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        val said = res.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+        if (res.resultCode == android.app.Activity.RESULT_OK && said.isNotEmpty()) {
+            micMsg = ""
+            VoiceState.lastHeard = said
+            if (!busy) {
+                send(said) { cb -> CosmoBrain.ask(said, "chat", cb) }
+            } else {
+                input = said
+            }
+        } else if (res.resultCode != android.app.Activity.RESULT_OK) {
+            micMsg = "Nothing heard. Try again."
+        }
+    }
+
+    fun startMic() {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, VoiceState.recognitionLocale())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to Cosmo")
+        }
+        try {
+            micMsg = ""
+            speechLauncher.launch(i)
+        } catch (e: Exception) {
+            micMsg = "No speech app found. Install the Google app, then try again."
         }
     }
 
@@ -725,6 +770,8 @@ fun BrainScreen() {
                 singleLine = false
             )
             Spacer(Modifier.width(8.dp))
+            ChipButton("MIC", CosmoColors.Amber, Modifier.width(56.dp)) { startMic() }
+            Spacer(Modifier.width(6.dp))
             ChipButton("SEND", CosmoColors.Cyan, Modifier.width(72.dp)) {
                 val p = input.trim()
                 if (p.isNotEmpty() && !busy) {
@@ -732,6 +779,14 @@ fun BrainScreen() {
                     send(p) { cb -> CosmoBrain.ask(p, "chat", cb) }
                 }
             }
+        }
+        if (micMsg.isNotEmpty()) {
+            Text(
+                text = micMsg,
+                color = CosmoColors.Crimson,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }
@@ -820,6 +875,71 @@ fun SettingsScreen() {
                         notes = 0
                     }.start()
                 }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ---------- voice ----------
+        var diag by remember { mutableStateOf(listOf<String>()) }
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionLabel("VOICE")
+            Spacer(Modifier.height(8.dp))
+            SettingSwitch(
+                title = "Wake word",
+                subtitle = "ON: say the wake word first. OFF: every phrase is a command and goes to the AI",
+                checked = Prefs.wakeEnabled,
+                onChange = { Prefs.wakeEnabled = it; Prefs.save() }
+            )
+            CosmoField(
+                value = Prefs.wakeWord,
+                onChange = { Prefs.wakeWord = it.take(20); Prefs.save() },
+                label = "Wake word (default: cosmo)",
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            SettingSwitch(
+                title = "Speak replies",
+                subtitle = "Read chat answers out loud",
+                checked = Prefs.speakReplies,
+                onChange = { Prefs.speakReplies = it; Prefs.save() }
+            )
+            Text(
+                text = "Voice language follows LANGUAGE below (English or Mongolian, if your phone supports it).",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ChipButton("CHECK VOICE", CosmoColors.Cyan, Modifier.weight(1f)) {
+                    diag = VoiceState.diagnose(ctx)
+                }
+                ChipButton("TEST SPEAK", CosmoColors.Amber, Modifier.weight(1f)) {
+                    Speaker.speak(ctx, "Voice systems online, Sir.")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "STATUS: ${VoiceState.status}",
+                color = CosmoColors.Cyan.copy(alpha = 0.8f),
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
+            )
+            VoiceState.error?.let {
+                Text(text = "ERROR: $it", color = CosmoColors.Crimson, fontSize = 11.sp)
+            }
+            if (VoiceState.lastHeard.isNotEmpty()) {
+                Text(
+                    text = "LAST HEARD: ${VoiceState.lastHeard}",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp
+                )
+            }
+            for (line in diag) {
+                Text(text = line, color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp, lineHeight = 15.sp)
             }
         }
 
