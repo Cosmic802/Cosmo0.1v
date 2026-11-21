@@ -428,6 +428,7 @@ class TrackReceiver : BroadcastReceiver() {
         Thread {
             try {
                 if (Prefs.autoTrack) Tracker.snapshot()
+                Doom.check(context)
             } catch (_: Exception) {
             } finally {
                 pr.finish()
@@ -441,6 +442,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         CosmoBrain.init(context)
         if (Prefs.autoTrack) Tracker.schedule()
+        Auto.onBoot(context, goAsync())
     }
 }
 

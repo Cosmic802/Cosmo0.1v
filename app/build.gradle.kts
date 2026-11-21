@@ -14,7 +14,7 @@ android {
         versionCode = 2
         versionName = "0.2"
 
-        // keeps the APK small (MediaPipe ships native libraries per CPU type)
+        // keeps the APK small (native libraries only for arm64)
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.material3:material3")
 
-    // On-device (offline) LLM runtime. Model file is picked by the user in Settings.
-    implementation("com.google.mediapipe:tasks-genai:0.10.27")
+    // On-device (offline) LLM runtime (llama.cpp, any .gguf). Model file is picked by the user in Settings.
+    implementation("org.codeshipping:llama-kotlin-android:0.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
         CosmoBrain.init(this)
         CosmoBrain.syncQueueAsync()
         CosmoVoiceEngine.onModeChange = { ModeState.mode = it }
+        Auto.startVoiceIfWanted(this)
         setContent {
             CosmoTheme {
                 CosmoApp()
@@ -667,9 +668,19 @@ fun BrainScreen() {
         if (busy) return
         busy = true
         msgs.add(ChatMsg(true, shown))
+        var live = -1
+        LlamaEngine.onPartial = { t ->
+            if (live < 0) {
+                msgs.add(ChatMsg(false, t))
+                live = msgs.size - 1
+            } else if (live < msgs.size) {
+                msgs[live] = ChatMsg(false, t)
+            }
+        }
         block { r ->
             busy = false
-            msgs.add(ChatMsg(false, r.text))
+            LlamaEngine.onPartial = null
+            if (live in 0 until msgs.size) msgs[live] = ChatMsg(false, r.text) else msgs.add(ChatMsg(false, r.text))
             if (Prefs.speakReplies && !r.error) Speaker.speak(ctx, r.text)
         }
     }
@@ -757,7 +768,7 @@ fun BrainScreen() {
                 }
             }
             items(msgs.size) { i -> ChatBubble(msgs[i]) }
-            if (busy) item { ChatBubble(ChatMsg(false, "…")) }
+            if (busy && msgs.lastOrNull()?.fromUser == true) item { ChatBubble(ChatMsg(false, "…")) }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -805,22 +816,38 @@ fun SettingsScreen() {
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
-            msg = "COPYING MODEL... (can take a minute)"
-            Thread {
-                try {
-                    val out = LocalAI.modelFile(ctx)
-                    out.parentFile?.mkdirs()
-                    ctx.contentResolver.openInputStream(uri)?.use { inp ->
-                        out.outputStream().use { o -> inp.copyTo(o, 1 shl 16) }
+            val name = (try {
+                ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            } catch (_: Exception) {
+                null
+            }) ?: uri.lastPathSegment ?: ""
+            if (!name.lowercase().endsWith(".gguf")) {
+                msg = "PICK A .gguf FILE (got: $name)"
+            } else {
+                msg = "COPYING MODEL... (can take a minute)"
+                Thread {
+                    try {
+                        val out = LocalAI.modelFile(ctx)
+                        out.parentFile?.mkdirs()
+                        val tmp = File(out.parentFile, "incoming.tmp")
+                        ctx.contentResolver.openInputStream(uri)?.use { inp ->
+                            tmp.outputStream().use { o -> inp.copyTo(o, 1 shl 16) }
+                        }
+                        LlamaEngine.release()
+                        out.delete()
+                        if (!tmp.renameTo(out)) {
+                            tmp.copyTo(out, true)
+                            tmp.delete()
+                        }
+                        Prefs.modelPath = out.absolutePath
+                        Prefs.save()
+                        msg = "MODEL READY · ${out.length() / 1_000_000} MB"
+                    } catch (e: Exception) {
+                        msg = "MODEL COPY FAILED: ${e.message}"
                     }
-                    LocalAI.release()
-                    Prefs.modelPath = out.absolutePath
-                    Prefs.save()
-                    msg = "MODEL READY · ${out.length() / 1_000_000} MB"
-                } catch (e: Exception) {
-                    msg = "MODEL COPY FAILED: ${e.message}"
-                }
-            }.start()
+                }.start()
+            }
         }
     }
 
@@ -881,6 +908,9 @@ fun SettingsScreen() {
         Spacer(Modifier.height(12.dp))
 
         ProfileCard()
+        Spacer(Modifier.height(12.dp))
+
+        AutoCard()
         Spacer(Modifier.height(12.dp))
 
         // ---------- voice ----------
@@ -1038,7 +1068,7 @@ fun SettingsScreen() {
                 letterSpacing = 1.sp
             )
             Text(
-                text = "Pick a Gemma .task model file (for example Gemma 3 1B int4) from your phone storage. It runs fully on-device.",
+                text = "Pick a .gguf model file (for example Qwen 2.5 1.5B) from your phone storage. It runs fully on-device.",
                 color = Color.White.copy(alpha = 0.55f),
                 fontSize = 11.sp,
                 lineHeight = 16.sp,

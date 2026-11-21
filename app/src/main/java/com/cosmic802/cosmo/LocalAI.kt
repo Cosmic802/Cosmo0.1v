@@ -1,7 +1,6 @@
 package com.cosmic802.cosmo
 
 import android.content.Context
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -9,46 +8,20 @@ import java.util.Locale
 
 /**
  * Offline brain.
- *  1. Optional on-device LLM (Gemma .task model picked in Settings, run by MediaPipe).
+ *  1. Optional on-device LLM (any .gguf model picked in Settings, run by llama.cpp).
  *  2. Built-in rule engine that works with no model at all (tasks, habits, time, notes).
  */
 object LocalAI {
 
-    private var engine: LlmInference? = null
-    private var loadedPath: String = ""
+    fun modelFile(ctx: Context): File = LlamaEngine.modelFile(ctx)
 
-    fun modelFile(ctx: Context): File = File(File(ctx.filesDir, "models"), "local_model.task")
+    fun isModelReady(): Boolean = LlamaEngine.isReady()
 
-    fun isModelReady(): Boolean =
-        Prefs.modelPath.isNotEmpty() && File(Prefs.modelPath).let { it.exists() && it.length() > 0 }
-
-    @Synchronized
-    fun release() {
-        engine = null
-        loadedPath = ""
-    }
+    fun release() = LlamaEngine.release()
 
     /** Returns null when no usable local model exists or it failed. Call from a background thread. */
-    @Synchronized
-    fun generate(ctx: Context, system: String, userPrompt: String): String? {
-        if (!isModelReady()) return null
-        return try {
-            if (engine == null || loadedPath != Prefs.modelPath) {
-                val opts = LlmInference.LlmInferenceOptions.builder()
-                    .setModelPath(Prefs.modelPath)
-                    .setMaxTokens(1024)
-                    .build()
-                engine = LlmInference.createFromOptions(ctx.applicationContext, opts)
-                loadedPath = Prefs.modelPath
-            }
-            val prompt = "<start_of_turn>user\n$system\n\n$userPrompt<end_of_turn>\n<start_of_turn>model\n"
-            engine?.generateResponse(prompt)?.trim()?.takeIf { it.isNotEmpty() }
-        } catch (t: Throwable) {
-            engine = null
-            loadedPath = ""
-            null
-        }
-    }
+    fun generate(ctx: Context, system: String, userPrompt: String): String? =
+        LlamaEngine.generate(ctx, system, userPrompt)
 
     // ---------------- rule engine (no model needed) ----------------
 

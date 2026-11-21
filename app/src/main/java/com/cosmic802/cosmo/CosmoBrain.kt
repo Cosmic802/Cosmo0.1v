@@ -558,7 +558,7 @@ object CosmoBrain {
         val local = LocalAI.generate(appCtx, localSystem(), prompt)
         val text = local ?: LocalAI.ruleBased(prompt, kind, cloudNote != null)
         record(kind, prompt, text)
-        val note = if (local == null && cloudNote != null) "\n\n[$cloudNote]" else ""
+        val note = (if (local == null && cloudNote != null) "\n\n[$cloudNote]" else "") + (if (local == null && LlamaEngine.isReady() && LlamaEngine.lastError.isNotEmpty()) "\n[Local model: ${LlamaEngine.lastError}]" else "")
         return BrainReply(text + note)
     }
 
